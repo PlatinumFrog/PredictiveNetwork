@@ -105,6 +105,7 @@ int main(int argc, char* argv[]) {
 	for (uint32_t i = 0u; i < inputSize; i++) {
 		input[i] = 0.0f, inputI[i] = i;
 	}
+	inputI[8u] = 43u;
 	float output[outputSize];
 	uint32_t outputI[outputSize];
 	for (uint32_t i = 0u; i < outputSize; i++) {
@@ -147,7 +148,7 @@ int main(int argc, char* argv[]) {
 		input[5] = std::cos(TAU * ((trainingUpdateParam + step5) / range));
 		input[6] = std::cos(TAU * ((trainingUpdateParam + step6) / range));
 		input[7] = std::cos(TAU * ((trainingUpdateParam + step7) / range));
-		input[8] = trainingUpdateParam;
+		input[8] = TAU * (trainingUpdateParam / range);
 		if (keystates[SDL_SCANCODE_SPACE]) n1.run(input, inputI, inputSize);
 		else if (keystates[SDL_SCANCODE_UP]) n1.sleep();
 		else {

@@ -6,10 +6,8 @@
 #include <sstream>
 #include <string>
 #include <cmath>
-//constexpr uint32_t nodeSize = 64u;
 
-
-constexpr uint32_t activeSize = 128u;
+constexpr uint32_t activeSize = 64u;
 constexpr uint32_t weightMatrixSize = activeSize * activeSize;
 constexpr uint32_t weightTotalSize = 2u * weightMatrixSize;
 
@@ -21,11 +19,11 @@ constexpr float PD2 = 1.57079632679f;
 constexpr float nodeRadiusMult = PD2 / (float)activeSize;
 
 float activation(const float x) {
-	return std::atan(x);
+	return x;
 }
 
 float activationd(const float x) {
-	return 1.0f / ((x * x) + 1.0f);
+	return 1.0f;
 }
 
 struct Node { float value, error; };
@@ -36,8 +34,7 @@ class Network {
 		weightPosVBO, weightCol1VBO, weightCol2VBO, weightVAO, weightShader;
 
 	float energy;
-
-	// 64 Nodes
+	
 	Node act[activeSize];
 	float weights[weightTotalSize];
 
@@ -146,7 +143,16 @@ public:
 	}
 
 	~Network() {
-		
+		glDeleteBuffers(1, &nodeColVBO);
+		glDeleteBuffers(1, &nodePosVBO);
+		glDeleteBuffers(1, &nodeColVBO);
+		glDeleteVertexArrays(1, &nodeVAO);
+		glDeleteProgram(nodeShader);
+		glDeleteBuffers(1, &weightPosVBO);
+		glDeleteBuffers(1, &weightCol1VBO);
+		glDeleteBuffers(1, &weightCol2VBO);
+		glDeleteVertexArrays(1, &weightVAO);
+		glDeleteProgram(weightShader);
 	}
 
 	void train(
@@ -219,6 +225,9 @@ public:
 			for (uint32_t j = 0u, k = weightIDBackMin; j < activeSize && k < weightIDBackMax; j++, k++) {
 				n.error -= weights[k] * activation(act[j].value);
 			}
+
+			
+
 			/*float weightweight = weightRate * n.error;
 			for (uint32_t j = 0u, k = weightIDBackMin; j < activeSize && k < weightIDBackMax; j++, k++) {
 				weights[k] += weightweight * softsign(act[j].value);

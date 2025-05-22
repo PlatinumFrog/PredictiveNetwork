@@ -32,13 +32,13 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="Network.h">
+      <Filter>include</Filter>
+    </ClInclude>
     <ClInclude Include="NetworkOld.h">
       <Filter>include</Filter>
     </ClInclude>
     <ClInclude Include="shader.h">
-      <Filter>include</Filter>
-    </ClInclude>
-    <ClInclude Include="Network.h">
       <Filter>include</Filter>
     </ClInclude>
   </ItemGroup>
