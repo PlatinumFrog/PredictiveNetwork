@@ -7,14 +7,17 @@
     <Filter Include="source">
       <UniqueIdentifier>{da942baa-546f-465c-a2e5-9464c2a33c73}</UniqueIdentifier>
     </Filter>
-    <Filter Include="source\DebugGL">
+    <Filter Include="DebugGL">
       <UniqueIdentifier>{e6a898d7-5ac1-44b6-b7dc-fb0311162697}</UniqueIdentifier>
     </Filter>
-    <Filter Include="source\ReleaseGL">
+    <Filter Include="ReleaseGL">
       <UniqueIdentifier>{05dbe96f-79af-4e9d-a48f-894cafd3e56d}</UniqueIdentifier>
     </Filter>
     <Filter Include="shaders">
       <UniqueIdentifier>{84931d2b-b79d-4f79-bbd8-beebcbdc0f59}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Git">
+      <UniqueIdentifier>{52bb35f0-a1ef-40d5-9e7d-e448c4ba73c9}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>
@@ -22,10 +25,10 @@
       <Filter>source</Filter>
     </ClCompile>
     <ClCompile Include="gladDebug\src\glad.c">
-      <Filter>source\DebugGL</Filter>
+      <Filter>DebugGL</Filter>
     </ClCompile>
     <ClCompile Include="gladRelease\src\glad.c">
-      <Filter>source\ReleaseGL</Filter>
+      <Filter>ReleaseGL</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -58,6 +61,8 @@
     <None Include="shaders\weightShader.vert">
       <Filter>shaders</Filter>
     </None>
-    <None Include="..\.gitignore" />
+    <None Include="..\.gitignore">
+      <Filter>Git</Filter>
+    </None>
   </ItemGroup>
 </Project>
