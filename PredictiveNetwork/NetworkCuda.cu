@@ -18,28 +18,35 @@ __global__ void updateVector(
 
 	//Global IDs
 	uint32_t vectorID1 = threadIdx.x;
-	uint32_t vectorID2 = vectorID1 + blockDim.x;
 	uint32_t matrixID1 = sizeV * blockIdx.x + threadIdx.x;
-	uint32_t matrixID2 = matrixID1 + blockDim.x;
 
-	while (vectorID1 < sizeV && vectorID2 < sizeV && matrixID1 < sizeM && matrixID2 < sizeM) {
-		sums[threadIdx.x] += vector[vectorID1] * matrix[matrixID1] + vector[vectorID2] * matrix[matrixID2];
+	while (vectorID1 < sizeV && matrixID1 < sizeM) {
+		sums[threadIdx.x] += vector[vectorID1] * matrix[matrixID1];
 		vectorID1 += blockDim.x;
 		matrixID1 += blockDim.x;
-		vectorID2 += blockDim.x;
-		matrixID2 += blockDim.x;
 	}
-	if (threadIdx.x < 512u) sums[threadIdx.x] += sums[threadIdx.x + 512u];
-	if (threadIdx.x < 256u) sums[threadIdx.x] += sums[threadIdx.x + 256u];
-	if (threadIdx.x < 128u) sums[threadIdx.x] += sums[threadIdx.x + 128u];
-	if (threadIdx.x < 64u) sums[threadIdx.x] += sums[threadIdx.x + 64u];
-	if (threadIdx.x < 32u) sums[threadIdx.x] += sums[threadIdx.x + 32u];
-	if (threadIdx.x < 16u) sums[threadIdx.x] += sums[threadIdx.x + 16u];
-	if (threadIdx.x < 8u) sums[threadIdx.x] += sums[threadIdx.x + 8u];
-	if (threadIdx.x < 4u) sums[threadIdx.x] += sums[threadIdx.x + 4u];
-	if (threadIdx.x < 2u) sums[threadIdx.x] += sums[threadIdx.x + 2u];
-	if (threadIdx.x < 1u) sums[threadIdx.x] += sums[threadIdx.x + 1u];
 
+	__syncthreads();
+	if (threadIdx.x < 512u) sums[threadIdx.x] += sums[threadIdx.x + 512u];
+	__syncthreads();
+	if (threadIdx.x < 256u) sums[threadIdx.x] += sums[threadIdx.x + 256u];
+	__syncthreads();
+	if (threadIdx.x < 128u) sums[threadIdx.x] += sums[threadIdx.x + 128u];
+	__syncthreads();
+	if (threadIdx.x < 64u) sums[threadIdx.x] += sums[threadIdx.x + 64u];
+	__syncthreads();
+	if (threadIdx.x < 32u) sums[threadIdx.x] += sums[threadIdx.x + 32u];
+	__syncthreads();
+	if (threadIdx.x < 16u) sums[threadIdx.x] += sums[threadIdx.x + 16u];
+	__syncthreads();
+	if (threadIdx.x < 8u) sums[threadIdx.x] += sums[threadIdx.x + 8u];
+	__syncthreads();
+	if (threadIdx.x < 4u) sums[threadIdx.x] += sums[threadIdx.x + 4u];
+	__syncthreads();
+	if (threadIdx.x < 2u) sums[threadIdx.x] += sums[threadIdx.x + 2u];
+	__syncthreads();
+	if (threadIdx.x < 1u) sums[threadIdx.x] += sums[threadIdx.x + 1u];
+	__syncthreads();
 	output[blockIdx.x] = sums[0u];
 }
 
@@ -63,7 +70,7 @@ NetworkCuda::~NetworkCuda() {
 };
 
 void NetworkCuda::testMatrixMultiplication() {
-	const static uint32_t sizesV = 4096u;
+	const static uint32_t sizesV = 1024u;
 	const static uint32_t sizesM = sizesV * sizesV;
 
 	float* testVector_d = nullptr;
@@ -80,6 +87,9 @@ void NetworkCuda::testMatrixMultiplication() {
 	testMatrix_h = new float[sizesM];
 	testResults_h = new float[sizesV];
 	testResults_dh = new float[sizesV];
+
+	std::srand(334);
+
 	for (uint32_t u = 0u; u < sizesV; u++) {
 		testVector_h[u] = ((float)std::rand() / (float)RAND_MAX);
 		testResults_h[u] = 0u;
@@ -87,23 +97,11 @@ void NetworkCuda::testMatrixMultiplication() {
 			testMatrix_h[v + (sizesV * u)] = ((float)std::rand() / (float)RAND_MAX);
 		}
 	}
-
-	cudaError_t err;
-	err = cudaMalloc((void**)&testVector_d, sizesV * sizeof(float));
-	GPU_ERROR_ABT("Error: ", err);
-	cudaDeviceSynchronize();
-	err = cudaMalloc((void**)&testMatrix_d, sizesM * sizeof(float));
-	GPU_ERROR_ABT("Error: ", err);
-	cudaDeviceSynchronize();
-	err = cudaMalloc((void**)&testResults_d, sizesV * sizeof(float));
-	GPU_ERROR_ABT("Error: ", err);
-	cudaDeviceSynchronize();
-	err = cudaMemcpy(testVector_d, testVector_h, sizesV * sizeof(float), cudaMemcpyHostToDevice);
-	GPU_ERROR_ABT("Error: ", err);
-	cudaDeviceSynchronize();
-	err = cudaMemcpy(testMatrix_d, testMatrix_h, sizesM * sizeof(float), cudaMemcpyHostToDevice);
-	GPU_ERROR_ABT("Error: ", err);
-	cudaDeviceSynchronize();
+	cudaMalloc((void**)&testVector_d, sizesV * sizeof(float));
+	cudaMalloc((void**)&testMatrix_d, sizesM * sizeof(float));
+	cudaMalloc((void**)&testResults_d, sizesV * sizeof(float));
+	cudaMemcpy(testVector_d, testVector_h, sizesV * sizeof(float), cudaMemcpyHostToDevice);
+	cudaMemcpy(testMatrix_d, testMatrix_h, sizesM * sizeof(float), cudaMemcpyHostToDevice);
 	for (uint32_t u = 0u; u < sizesV; u++) {
 		for (uint32_t v = 0u; v < sizesV; v++) {
 			testResults_h[u] += testVector_h[v] * testMatrix_h[(sizesV * u) + v];
@@ -113,20 +111,12 @@ void NetworkCuda::testMatrixMultiplication() {
 	delete[] testVector_h;
 	delete[] testMatrix_h;
 
-	updateVector<<<1024u,1024u>>>(testVector_d, testMatrix_d, testResults_d, sizesV, sizesM, sizesV);
+	updateVector<<<sizesV,(sizesV > 1024u) ? 1024u : sizesV>>>(testVector_d, testMatrix_d, testResults_d, sizesV, sizesM, sizesV);
 	cudaDeviceSynchronize();
-	err = cudaMemcpy(testResults_dh, testResults_d, sizesV * sizeof(float), cudaMemcpyDeviceToHost);
-	GPU_ERROR_ABT("Error: ", err);
-	cudaDeviceSynchronize();
-	err = cudaFree(testVector_d);
-	GPU_ERROR_ABT("Error: ", err);
-	cudaDeviceSynchronize();
-	err = cudaFree(testMatrix_d);
-	GPU_ERROR_ABT("Error: ", err);
-	cudaDeviceSynchronize();
-	err = cudaFree(testResults_d);
-	GPU_ERROR_ABT("Error: ", err);
-	cudaDeviceSynchronize();
+	cudaMemcpy(testResults_dh, testResults_d, sizesV * sizeof(float), cudaMemcpyDeviceToHost);
+	cudaFree(testVector_d);
+	cudaFree(testMatrix_d);
+	cudaFree(testResults_d);
 	float score = 0.0f;
 	for (uint32_t u = 0u; u < sizesV; u++) {
 		float sum = testResults_h[u] - testResults_dh[u];
