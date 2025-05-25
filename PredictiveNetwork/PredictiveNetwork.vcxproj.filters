@@ -41,6 +41,9 @@
     <ClInclude Include="shader.h">
       <Filter>include</Filter>
     </ClInclude>
+    <ClInclude Include="NetworkCuda.cuh">
+      <Filter>include</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="shaders\nodeShader.frag">
@@ -64,5 +67,10 @@
     <None Include="..\.gitignore">
       <Filter>Git</Filter>
     </None>
+  </ItemGroup>
+  <ItemGroup>
+    <CudaCompile Include="NetworkCuda.cu">
+      <Filter>source</Filter>
+    </CudaCompile>
   </ItemGroup>
 </Project>

@@ -19,11 +19,12 @@ constexpr float PD2 = 1.57079632679f;
 constexpr float nodeRadiusMult = PD2 / (float)activeSize;
 
 float activation(const float x) {
-	return x;
+	return x / (1.0f + std::abs(x));
 }
 
 float activationd(const float x) {
-	return 1.0f;
+	float inter = 1.0f + std::abs(x);
+	return 1.0f / (inter * inter);
 }
 
 struct Node { float value, error; };
@@ -53,7 +54,7 @@ public:
 	{
 
 		for (Node* n = act; n < act + activeSize; n++) *n = {0.0f, 0.0f};
-		for (float* f = weights; f < weights + weightTotalSize; f++) *f = 0.0f;
+		for (float* f = weights; f < weights + weightTotalSize; f++) *f = ((float)std::rand() / (float)RAND_MAX) * 0.0001f; // ;
 
 		glGenBuffers(1u, &nodePosVBO);
 		glGenBuffers(1u, &nodeColVBO);
@@ -187,12 +188,11 @@ public:
 			for (uint32_t j = 0u, k = weightIDBackMin; j < activeSize && k < weightIDBackMax; j++, k++) {
 				weights[k] += weightweight * activation(act[j].value);
 			}
-			
-			n.value -= n.error;
+			float sum = n.error;
 			for (uint32_t j = 0u, k = weightIDForwMin; j < activeSize && k < weightIDForwMax; j++, k++) {
-				n.value += weights[k] * act[j].error;
+				sum -= weights[k] * act[j].error;
 			}
-			n.value *= interd;
+			n.value -= sum * interd;
 			inter *= weightRate;
 			for (uint32_t j = 0u, k = weightIDForwMin; j < activeSize && k < weightIDForwMax; j++, k++) {
 				weights[k] += act[j].error * inter;
@@ -225,19 +225,15 @@ public:
 			for (uint32_t j = 0u, k = weightIDBackMin; j < activeSize && k < weightIDBackMax; j++, k++) {
 				n.error -= weights[k] * activation(act[j].value);
 			}
-
-			
-
 			/*float weightweight = weightRate * n.error;
 			for (uint32_t j = 0u, k = weightIDBackMin; j < activeSize && k < weightIDBackMax; j++, k++) {
-				weights[k] += weightweight * softsign(act[j].value);
+				weights[k] += weightweight * activation(act[j].value);
 			}*/
-
-			n.value -= n.error;
+			float sum = n.error;
 			for (uint32_t j = 0u, k = weightIDForwMin; j < activeSize && k < weightIDForwMax; j++, k++) {
-				n.value += weights[k] * act[j].error;
+				sum -= weights[k] * act[j].error;
 			}
-			n.value *= interd;
+			n.value -= sum * interd;
 			/*inter *= weightRate;
 			for (uint32_t j = 0u, k = weightIDForwMin; j < activeSize && k < weightIDForwMax; j++, k++) {
 				weights[k] += act[j].error * inter;
@@ -269,12 +265,11 @@ public:
 			for (uint32_t j = 0u, k = weightIDBackMin; j < activeSize && k < weightIDBackMax; j++, k++) {
 				weights[k] += weightweight * activation(act[j].value);
 			}
-
-			n.value -= n.error;
+			float sum = n.error;
 			for (uint32_t j = 0u, k = weightIDForwMin; j < activeSize && k < weightIDForwMax; j++, k++) {
-				n.value += weights[k] * act[j].error;
+				sum -= weights[k] * act[j].error;
 			}
-			n.value *= interd;
+			n.value -= sum * interd;
 			inter *= weightRate;
 			for (uint32_t j = 0u, k = weightIDForwMin; j < activeSize && k < weightIDForwMax; j++, k++) {
 				weights[k] += act[j].error * inter;
@@ -289,9 +284,13 @@ public:
 		for (uint32_t i = 0u; i < activeSize; i++) sum1 += act[i].error * act[i].error;
 		energy = sum1;
 		float sum2 = 0.0f;
-		for (uint32_t i = 0u; i < weightMatrixSize; i++) {
-			float s = weights[i] - weights[i + weightMatrixSize];
-			sum2 += s * s;
+		for (uint32_t i = 0u; i < activeSize; i++) {
+			for (uint32_t j = 0u; j < activeSize; j++) {
+				uint32_t id1 = i + activeSize * j;
+				uint32_t id2 = j + activeSize * i;
+				float inter = weights[weightMatrixSize + id1] - weights[id1];
+				sum2 += inter * inter;
+			}
 		}
 		std::cout << "Energy: " << sum1 << ", Matrix Diversion: " << sum2 << '\n';
 	}
