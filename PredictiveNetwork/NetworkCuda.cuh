@@ -10,6 +10,8 @@
 #include <string>
 #include <cmath>
 
+//TODO: Add layer IO kernels
+
 template<size_t activeSize>
 class NetworkCuda {
 
