@@ -99,9 +99,16 @@ int main(int argc, char* argv[]) {
 //	glCullFace(GL_BACK);
 //	glEnable(GL_MULTISAMPLE);
 
-	NetworkCuda n1;
+	NetworkCuda<4096u> n1;
 
-	n1.testMatrixMultiplication();
+	std::cout << "Energy: " << n1.run() << '\n';
+	std::cout << "Energy: " << n1.run() << '\n';
+	std::cout << "Energy: " << n1.run() << '\n';
+	std::cout << "Energy: " << n1.run() << '\n';
+	std::cout << "Energy: " << n1.run() << '\n';
+	std::cout << "Energy: " << n1.run() << '\n';
+	std::cout << "Energy: " << n1.run() << '\n';
+	std::cout << "Energy: " << n1.run() << '\n';
 
 
 

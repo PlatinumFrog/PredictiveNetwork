@@ -10,10 +10,13 @@
 #include <string>
 #include <cmath>
 
+template<size_t activeSize>
 class NetworkCuda {
 
 	float* values;
+	float* valuesN;
 	float* errors;
+	float* errorsN;
 	float* weightsV;
 	float* weightsE;
 
@@ -21,9 +24,15 @@ public:
 
 	NetworkCuda();
 	~NetworkCuda();
+	
+	const size_t const getActiveSize() const { return activeSize; };
+	const size_t const getWeightSize() const { return activeSize * activeSize; };
+	const size_t const getBlockSize() const { return 1024ull; };
+	const size_t const getGridSize() const { return (activeSize / getBlockSize()) + 1ull; };
 
-	/*inline const size_t getVectorSize() const { return activeSize; }
-	inline const size_t getMatrixSize() const { return activeSize * activeSize; }
-
-	*/void testMatrixMultiplication();
+	float run();
+	
+	//void testMatrixMultiplication();
 };
+
+template class NetworkCuda<4096u>;
