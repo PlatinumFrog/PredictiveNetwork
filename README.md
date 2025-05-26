@@ -1,4 +1,4 @@
-# PredictiveNetwork
+# Predictive Network
 This is a Recurrent Predictive Coding neural network with unified IO.
 
 # Predictive Coding
