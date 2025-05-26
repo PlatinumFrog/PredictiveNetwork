@@ -20,7 +20,7 @@ constexpr uint32_t viewHeight = 720;
 
 constexpr uint32_t inputSize = 9u;
 constexpr uint32_t outputSize = 8u;
-
+constexpr float TAU = 6.28318530718f;
 
 void GLAPIENTRY MessageCallback(
 	GLenum source,
@@ -71,127 +71,108 @@ int main(int argc, char* argv[]) {
 
 	std::srand(28172);
 
-	//SDL_Init(SDL_INIT_CAMERA | SDL_INIT_VIDEO);
+	SDL_Init(SDL_INIT_CAMERA | SDL_INIT_VIDEO);
 
-//	SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
-//	SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 4);
-//	SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 6);
-//	SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
-//	SDL_GL_SetAttribute(SDL_GL_MULTISAMPLESAMPLES, 16);
-//	SDL_GL_SetSwapInterval(-1);
-//#ifdef _DEBUG
-//	SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, SDL_GL_CONTEXT_DEBUG_FLAG);
-//#endif // DEBUG
-//
-//	SDL_Window* window = SDL_CreateWindow("Camera", viewWidth, viewHeight, SDL_WINDOW_FULLSCREEN | SDL_WINDOW_OPENGL);
-//	SDL_GLContext context = SDL_GL_CreateContext(window);
-//	gladLoadGL();
-//#if _DEBUG
-//	glEnable(GL_DEBUG_OUTPUT);
-//	glDebugMessageCallback(MessageCallback, 0);
-//#endif
-//	glViewport(0, 0, viewWidth, viewHeight);
-//
-//	glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-//
-//	glEnable(GL_DEPTH_TEST);
-//	glDepthFunc(GL_LESS);
-//	glCullFace(GL_BACK);
-//	glEnable(GL_MULTISAMPLE);
+	SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
+	SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 4);
+	SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 6);
+	SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
+	SDL_GL_SetAttribute(SDL_GL_MULTISAMPLESAMPLES, 16);
+	SDL_GL_SetSwapInterval(-1);
+#ifdef _DEBUG
+	SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, SDL_GL_CONTEXT_DEBUG_FLAG);
+#endif // DEBUG
 
-	NetworkCuda<4096u> n1;
+	SDL_Window* window = SDL_CreateWindow("Camera", viewWidth, viewHeight, SDL_WINDOW_FULLSCREEN | SDL_WINDOW_OPENGL);
+	SDL_GLContext context = SDL_GL_CreateContext(window);
+	gladLoadGL();
+#if _DEBUG
+	glEnable(GL_DEBUG_OUTPUT);
+	glDebugMessageCallback(MessageCallback, 0);
+#endif
+	glViewport(0, 0, viewWidth, viewHeight);
 
-	std::cout << "Energy: " << n1.run() << '\n';
-	std::cout << "Energy: " << n1.run() << '\n';
-	std::cout << "Energy: " << n1.run() << '\n';
-	std::cout << "Energy: " << n1.run() << '\n';
-	std::cout << "Energy: " << n1.run() << '\n';
-	std::cout << "Energy: " << n1.run() << '\n';
-	std::cout << "Energy: " << n1.run() << '\n';
-	std::cout << "Energy: " << n1.run() << '\n';
+	glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
 
+	glEnable(GL_DEPTH_TEST);
+	glDepthFunc(GL_LESS);
+	glCullFace(GL_BACK);
+	glEnable(GL_MULTISAMPLE);
 
+	float input[inputSize];
+	uint32_t inputI[inputSize];
+	for (uint32_t i = 0u; i < inputSize; i++) {
+		input[i] = 0.0f, inputI[i] = i;
+	}
+	inputI[8u] = 43u;
+	float output[outputSize];
+	uint32_t outputI[outputSize];
+	for (uint32_t i = 0u; i < outputSize; i++) {
+		output[i] = 0.0f, outputI[i] = inputSize + i;
+	}
 
-	///*float input[inputSize];
-	//uint32_t inputI[inputSize];
-	//for (uint32_t i = 0u; i < inputSize; i++) {
-	//	input[i] = 0.0f, inputI[i] = i;
-	//}
-	//inputI[8u] = 43u;
-	//float output[outputSize];
-	//uint32_t outputI[outputSize];
-	//for (uint32_t i = 0u; i < outputSize; i++) {
-	//	output[i] = 0.0f, outputI[i] = inputSize + i;
-	//}
+	float trainingUpdateParam = 0.0f;
 
-	//float trainingUpdateParam = 0.0f;*/
+	NetworkCuda<64u> n1;
 
+	const bool* keystates = SDL_GetKeyboardState(NULL);
+	bool loop = true;
+	while (!keystates[SDL_SCANCODE_ESCAPE] && loop) {
+		keystates = SDL_GetKeyboardState(NULL);
+		SDL_PumpEvents();
+		SDL_Event e;
+		std::vector<SDL_Event> events;
+		while (SDL_PollEvent(&e)) {
+			events.push_back(e);
+		}
+		for (SDL_Event& ev : events) {
+			switch (ev.type) {
+			case SDL_EVENT_WINDOW_CLOSE_REQUESTED:
+				loop = false;
+				break;
+			case SDL_EVENT_WINDOW_RESIZED:
+				glViewport(0, 0, ev.window.data1, ev.window.data2);
+				break;
+			default:
+				break;
+			}
+		}
 
-	//const bool* keystates = SDL_GetKeyboardState(NULL);
-	//bool loop = true;
-	//while (!keystates[SDL_SCANCODE_ESCAPE] && loop) {
-	//	keystates = SDL_GetKeyboardState(NULL);
-	//	SDL_PumpEvents();
-	//	SDL_Event e;
-	//	std::vector<SDL_Event> events;
-	//	while (SDL_PollEvent(&e)) {
-	//		events.push_back(e);
-	//	}
-	//	for (SDL_Event& ev : events) {
-	//		switch (ev.type) {
-	//		case SDL_EVENT_WINDOW_CLOSE_REQUESTED:
-	//			loop = false;
-	//			break;
-	//		case SDL_EVENT_WINDOW_RESIZED:
-	//			glViewport(0, 0, ev.window.data1, ev.window.data2);
-	//			break;
-	//		default:
-	//			break;
-	//		}
-	//	}
+		events.clear();
 
-	//	events.clear();
+		input[0] = std::cos(TAU * (trainingUpdateParam / range));
+		input[1] = std::cos(TAU * ((trainingUpdateParam + step1) / range));
+		input[2] = std::cos(TAU * ((trainingUpdateParam + step2) / range));
+		input[3] = std::cos(TAU * ((trainingUpdateParam + step3) / range));
+		input[4] = std::cos(TAU * ((trainingUpdateParam + step4) / range));
+		input[5] = std::cos(TAU * ((trainingUpdateParam + step5) / range));
+		input[6] = std::cos(TAU * ((trainingUpdateParam + step6) / range));
+		input[7] = std::cos(TAU * ((trainingUpdateParam + step7) / range));
+		input[8] = 2.0f * (trainingUpdateParam / range) - 1.0f;
+		output[1] = std::cos(TAU * (trainingUpdateParam / range));
+		output[2] = std::cos(TAU * ((trainingUpdateParam + step1) / range));
+		output[3] = std::cos(TAU * ((trainingUpdateParam + step2) / range));
+		output[4] = std::cos(TAU * ((trainingUpdateParam + step3) / range));
+		output[5] = std::cos(TAU * ((trainingUpdateParam + step4) / range));
+		output[6] = std::cos(TAU * ((trainingUpdateParam + step5) / range));
+		output[7] = std::cos(TAU * ((trainingUpdateParam + step6) / range));
+		output[0] = std::cos(TAU * ((trainingUpdateParam + step7) / range));
+		std::cout << "Energy: " << n1.train(input, output, inputI, outputI, inputSize, outputSize) << '\n';
+		trainingUpdateParam += 5.0f;
+		if (trainingUpdateParam >= range) trainingUpdateParam -= range;
 
-	//	/*input[0] = std::cos(TAU * (trainingUpdateParam / range));
-	//	input[1] = std::cos(TAU * ((trainingUpdateParam + step1) / range));
-	//	input[2] = std::cos(TAU * ((trainingUpdateParam + step2) / range));
-	//	input[3] = std::cos(TAU * ((trainingUpdateParam + step3) / range));
-	//	input[4] = std::cos(TAU * ((trainingUpdateParam + step4) / range));
-	//	input[5] = std::cos(TAU * ((trainingUpdateParam + step5) / range));
-	//	input[6] = std::cos(TAU * ((trainingUpdateParam + step6) / range));
-	//	input[7] = std::cos(TAU * ((trainingUpdateParam + step7) / range));
-	//	input[8] = 2.0f * (trainingUpdateParam / range) - 1.0f;
-	//	if (keystates[SDL_SCANCODE_SPACE]) n1.run(input, inputI, inputSize);
-	//	else if (keystates[SDL_SCANCODE_UP]) n1.sleep();
-	//	else 
-	//	{
-	//		output[1] = std::cos(TAU * (trainingUpdateParam / range));
-	//		output[2] = std::cos(TAU * ((trainingUpdateParam + step1) / range));
-	//		output[3] = std::cos(TAU * ((trainingUpdateParam + step2) / range));
-	//		output[4] = std::cos(TAU * ((trainingUpdateParam + step3) / range));
-	//		output[5] = std::cos(TAU * ((trainingUpdateParam + step4) / range));
-	//		output[6] = std::cos(TAU * ((trainingUpdateParam + step5) / range));
-	//		output[7] = std::cos(TAU * ((trainingUpdateParam + step6) / range));
-	//		output[0] = std::cos(TAU * ((trainingUpdateParam + step7) / range));
-	//		n1.train(input, output, inputI, outputI, inputSize, outputSize);
-	//	}
+		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-	//	n1.print();
-	//	trainingUpdateParam += 5.0f;
-	//	if (trainingUpdateParam >= range) trainingUpdateParam -= range;*/
+		/*n1.draw();*/
 
-	//	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+		SDL_GL_SwapWindow(window);
 
-	//	/*n1.draw();*/
+	}
 
-	//	SDL_GL_SwapWindow(window);
-
-	//}
-
-	//SDL_GL_DestroyContext(context);
-	//SDL_HideWindow(window);
-	//SDL_DestroyWindow(window);
-	//SDL_Quit();
+	SDL_GL_DestroyContext(context);
+	SDL_HideWindow(window);
+	SDL_DestroyWindow(window);
+	SDL_Quit();
 
 	return 0;
 }

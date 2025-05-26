@@ -17,7 +17,7 @@ __device__ float AFD(float x) {
 //// Then converted to large vector magnitude calculation
 
 template<size_t blockSize>
-__global__ void sumReduceInitial(float* g_idata, float* g_odata, uint32_t n) {
+__global__ void sumReduceInitialAF(float* g_idata, float* g_odata, const size_t n) {
 	// Shared Memory for operation
 	extern __shared__ float sdata[];
 
@@ -65,7 +65,55 @@ __global__ void sumReduceInitial(float* g_idata, float* g_odata, uint32_t n) {
 }
 
 template<size_t blockSize>
-__global__ void sumReduceContinued(float* g_idata, float* g_odata, uint32_t n) {
+__global__ void sumReduceInitial(float* g_idata, float* g_odata, const size_t n) {
+	// Shared Memory for operation
+	extern __shared__ float sdata[];
+
+	// Shared Memory index
+	uint32_t tid = threadIdx.x;
+
+	// Global Memory index
+	uint32_t i = blockIdx.x * blockSize + tid;
+
+	// Total Grid Size
+	uint32_t gridSize = blockSize * gridDim.x;
+
+	// Set Shared Memory to zero
+	sdata[tid] = 0.0f;
+
+	// Keep adding blocks of memory until the end of the array
+	while (i < n) {
+		float x = g_idata[i];
+		sdata[tid] += x * x;
+		i += gridSize;
+	}
+
+	// Make sure that all thread independant shared memory operations are done
+	__syncthreads();
+
+	// Start tree based reduction
+	if (blockSize >= 1024u) { if (tid < 512u) { sdata[tid] += sdata[tid + 512u]; } __syncthreads(); }
+	if (blockSize >= 512u) { if (tid < 256u) { sdata[tid] += sdata[tid + 256u]; } __syncthreads(); }
+	if (blockSize >= 256u) { if (tid < 128u) { sdata[tid] += sdata[tid + 128u]; } __syncthreads(); }
+	if (blockSize >= 128u) { if (tid < 64u) { sdata[tid] += sdata[tid + 64u]; } __syncthreads(); }
+
+	// Start warp level reduction
+	if (tid < 32u) {
+		volatile float* s = sdata;
+		if (blockSize >= 64u) s[tid] += s[tid + 32u];
+		if (blockSize >= 32u) s[tid] += s[tid + 16u];
+		if (blockSize >= 16u) s[tid] += s[tid + 8u];
+		if (blockSize >= 8u) s[tid] += s[tid + 4u];
+		if (blockSize >= 4u) s[tid] += s[tid + 2u];
+		if (blockSize >= 2u) s[tid] += s[tid + 1u];
+	}
+
+	// Write result to first half of the global memory array
+	if (tid == 0u) g_odata[blockIdx.x] = sdata[0];
+}
+
+template<size_t blockSize>
+__global__ void sumReduceContinued(float* g_idata, float* g_odata, const size_t n) {
 	// Shared Memory for operation
 	extern __shared__ float sdata[];
 
@@ -199,9 +247,24 @@ __global__ void updateWeights(float* values, float* errors, float* weightsV, flo
 	uint32_t id = (blockIdx.x * blockDim.x) + threadIdx.x;
 	uint32_t x = id % sizeV;
 	uint32_t y = id / sizeV;
-	float scale = valuesN[0u];
+	float scale = 1.0f / valuesN[0u];
 	weightsV[id] += scale * AF(values[y]) * errors[x];
 	weightsE[id] += scale * AF(values[x]) * errors[y];
+}
+
+__global__ void setZero(float* values, size_t s) {
+	uint32_t id = (blockIdx.x * blockDim.x) + threadIdx.x;
+	if (id < s) values[id] = 0.0f;
+}
+
+__global__ void setValues(
+	float* input,
+	float* output,
+	uint32_t* inputIDs,
+	uint32_t s
+) {
+	uint32_t id = (blockIdx.x * blockDim.x) + threadIdx.x;
+	output[inputIDs[id]] = input[id];
 }
 
 template<size_t activeSize>
@@ -213,27 +276,13 @@ errorsN(nullptr),
 weightsV(nullptr),
 weightsE(nullptr)
 {
-	/*nThreads = s;
-	nThreads = (nThreads > 1024u) ? 1024u : nThreads;
-	nThreads--;
-	nThreads |= nThreads >> 1u;
-	nThreads |= nThreads >> 2u;
-	nThreads |= nThreads >> 4u;
-	nThreads |= nThreads >> 8u;
-	nThreads |= nThreads >> 16u;
-	nThreads |= nThreads >> 32u;
-	nThreads++;
-	
-	nBlocks = (s / nThreads) + 1ull;*/
-
-
-	cudaMalloc((void**)&values, activeSize * sizeof(float));
+	cudaMallocManaged(&values, activeSize * sizeof(float));
 	cudaMalloc((void**)&valuesN, activeSize * sizeof(float));
 	cudaMalloc((void**)&errors, activeSize * sizeof(float));
 	cudaMalloc((void**)&errorsN, activeSize * sizeof(float));
 	cudaMalloc((void**)&weightsV, getWeightSize() * sizeof(float));
 	cudaMalloc((void**)&weightsE, getWeightSize() * sizeof(float));
-	
+	reset();
 };
 
 template<size_t activeSize>
@@ -247,24 +296,197 @@ NetworkCuda<activeSize>::~NetworkCuda() {
 };
 
 template<size_t activeSize>
-float NetworkCuda<activeSize>::run() {
-	updateErrors<1024u><<<activeSize, 1024u, 1024u * sizeof(float)>>>(values, errors, weightsE, activeSize);
-	updateValues<1024u><<<activeSize, 1024u, 1024u * sizeof(float)>>>(values, errors, weightsV, activeSize);
-	sumReduceInitial<1024u><<<activeSize, 1024u, 1024u * sizeof(float)>>>(values, valuesN, activeSize);
-#pragma unroll
-	for (uint32_t i = activeSize / 1024u; i > 1024u; i >>= 1u) {
-		sumReduceContinued<1024u><<<activeSize, 1024u, 1024u * sizeof(float)>>>(valuesN, valuesN, activeSize);
-	}
-	updateWeights<<<getGridSize(), 1024u >>>(values, errors, weightsV, weightsE, valuesN, activeSize);
-	sumReduceInitial<1024u><<<activeSize, 1024u, 1024u * sizeof(float)>>>(errors, errorsN, activeSize);
-#pragma unroll
-	for (uint32_t i = activeSize / 1024u; i > 1024u; i >>= 1u) {
-		sumReduceContinued<1024u><<<activeSize, 1024u, 1024u * sizeof(float)>>>(errorsN, errorsN, activeSize);
-	}
+void NetworkCuda<activeSize>::reset() {
+	resetValues();
+	resetNValues();
+	resetErrors();
+	resetNErrors();
+	resetMatrixValues();
+	resetMatrixErrors();
+}
+
+template<size_t activeSize>
+void NetworkCuda<activeSize>::resetValues() {
+	if (activeSize > 1024u) setZero<<<(((activeSize - 1u) >> 10u) + 1u), 1024u>>>(values, activeSize);
+	else if (activeSize > 512u) setZero<<<1u, 1024u>>>(values, activeSize);
+	else if (activeSize > 256u) setZero<<<1u, 512u>>>(values, activeSize);
+	else if (activeSize > 128u) setZero<<<1u, 256u>>>(values, activeSize);
+	else if (activeSize > 64u) setZero<<<1u, 128u>>>(values, activeSize);
+	else if (activeSize > 32u) setZero<<<1u, 64u>>>(values, activeSize);
+	else setZero<<<1u, 32u>>>(values, activeSize);
+}
+
+template<size_t activeSize>
+void NetworkCuda<activeSize>::resetNValues() {
+	if (activeSize > 1024u) setZero<<<(((activeSize - 1u) >> 10u) + 1u), 1024u >> > (valuesN, activeSize);
+	else if (activeSize > 512u) setZero<<<1u, 1024u>>>(valuesN, activeSize);
+	else if (activeSize > 256u) setZero<<<1u, 512u>>>(valuesN, activeSize);
+	else if (activeSize > 128u) setZero<<<1u, 256u>>>(valuesN, activeSize);
+	else if (activeSize > 64u) setZero<<<1u, 128u>>>(valuesN, activeSize);
+	else if (activeSize > 32u) setZero<<<1u, 64u>>>(valuesN, activeSize);
+	else setZero<<<1u, 32u>>>(valuesN, activeSize);
+}
+
+template<size_t activeSize>
+void NetworkCuda<activeSize>::resetErrors() {
+	if (activeSize > 1024u) setZero<<<(((activeSize - 1u) >> 10u) + 1u), 1024u>>>(errors, activeSize);
+	else if (activeSize > 512u) setZero<<<1u, 1024u>>>(errors, activeSize);
+	else if (activeSize > 256u) setZero<<<1u, 512u>>>(errors, activeSize);
+	else if (activeSize > 128u) setZero<<<1u, 256u>>>(errors, activeSize);
+	else if (activeSize > 64u) setZero<<<1u, 128u>>>(errors, activeSize);
+	else if (activeSize > 32u) setZero<<<1u, 64u>>>(errors, activeSize);
+	else setZero<<<1u, 32u>>>(errors, activeSize);
+}
+
+template<size_t activeSize>
+void NetworkCuda<activeSize>::resetNErrors() {
+	if (activeSize > 1024u) setZero << <(((activeSize - 1u) >> 10u) + 1u), 1024u >> > (errorsN, activeSize);
+	else if (activeSize > 512u) setZero<<<1u, 1024u>>>(errorsN, activeSize);
+	else if (activeSize > 256u) setZero<<<1u, 512u>>>(errorsN, activeSize);
+	else if (activeSize > 128u) setZero<<<1u, 256u>>>(errorsN, activeSize);
+	else if (activeSize > 64u) setZero<<<1u, 128u>>>(errorsN, activeSize);
+	else if (activeSize > 32u) setZero<<<1u, 64u>>>(errorsN, activeSize);
+	else setZero<<<1u, 32u>>>(errorsN, activeSize);
+}
+
+template<size_t activeSize>
+void NetworkCuda<activeSize>::resetMatrixValues() {
+	setZero<<<((((activeSize * activeSize) - 1u) >> 10u) + 1u), 1024u>>>(weightsV, activeSize * activeSize);
+}
+template<size_t activeSize>
+void NetworkCuda<activeSize>::resetMatrixErrors() {
+	setZero<<<((((activeSize * activeSize) - 1u) >> 10u) + 1u), 1024u>>>(weightsE, activeSize * activeSize);
+}
+
+template<size_t activeSize>
+float NetworkCuda<activeSize>::train(
+	float* input, 
+	float* output, 
+	uint32_t* inputIDs, 
+	uint32_t* outputIDs, 
+	uint32_t sizeI, 
+	uint32_t sizeO
+) {
+	float* ptrV = nullptr;
+	uint32_t* ptrI = nullptr;
+
+	cudaMalloc(&ptrV, sizeI * sizeof(float));
+	cudaMalloc(&ptrI, sizeI * sizeof(uint32_t));
+	cudaMemcpy(ptrV, input, sizeI * sizeof(float), cudaMemcpyHostToDevice);
+	cudaMemcpy(ptrI, inputIDs, sizeI * sizeof(uint32_t), cudaMemcpyHostToDevice);
+	setValues<<<((sizeI - 1u) >> 5u) + 1u, 32u>>>(ptrV, values, ptrI, sizeI);
+	cudaMemcpy(ptrV, output, sizeO * sizeof(float), cudaMemcpyHostToDevice);
+	cudaMemcpy(ptrI, outputIDs, sizeO * sizeof(uint32_t), cudaMemcpyHostToDevice);
+	setValues<<<((sizeO - 1u) >> 5u) + 1u, 32u>>> (ptrV, values, ptrI, sizeO);
+	cudaFree(ptrV);
+	cudaFree(ptrI);
+	resetNValues();
+	calcNormAF(values, valuesN);
+	calcErrors();
+	calcValues();
+	calcWeights();
+	resetNErrors();
+	calcNorm(errors, errorsN);
 	float error = 0.0f;
 	cudaMemcpy(&error, errorsN, sizeof(float), cudaMemcpyDeviceToHost);
 	return error;
-};
+}
+
+
+template<size_t activeSize>
+inline void NetworkCuda<activeSize>::calcNorm(float* input, float* output) {
+	if(activeSize > 1024u) sumReduceInitial<1024u><<<(((activeSize - 1u) >> 10u) + 1u), 1024u, 1024u * sizeof(float)>>> (input, output, activeSize);
+	else if(activeSize > 512u) sumReduceInitial<512u><<<1u, 512u, 512u * sizeof(float)>>>(input, output, activeSize);
+	else if (activeSize > 256u) sumReduceInitial<256u><<<1u, 256u, 256u * sizeof(float)>>>(input, output, activeSize);
+	else if (activeSize > 128u) sumReduceInitial<128u><<<1u, 128u, 128u * sizeof(float)>>>(input, output, activeSize);
+	else if (activeSize > 64u) sumReduceInitial<64u><<<1u, 64u, 64u * sizeof(float)>>>(input, output, activeSize);
+	else sumReduceInitial<32u><<<1u, 32u, 32u * sizeof(float)>>>(input, output, activeSize);
+#pragma unroll
+	for (size_t i = (((activeSize - 1u) >> 10u) + 1u); i > 32u; i = (((i - 1u) >> 10u) + 1u)) {
+		if (i > 1024u) sumReduceContinued<1024u><<<(((i - 1u) >> 10u) + 1u), 1024u, 1024u * sizeof(float)>>>(output, output, activeSize);
+		else if (i > 512u) sumReduceContinued<512u><<<1u, 512u, 512u * sizeof(float)>>>(output, output, i);
+		else if (i > 256u) sumReduceContinued<256u><<<1u, 256u, 256u * sizeof(float)>>>(output, output, i);
+		else if (i > 128u) sumReduceContinued<128u><<<1u, 128u, 128u * sizeof(float)>>>(output, output, i);
+		else if (i > 64u) sumReduceContinued<64u><<<1u, 64u, 64u * sizeof(float)>>> (output, output, i);
+		else sumReduceContinued<32u><<<1u, 32u, 32u * sizeof(float)>>>(output, output, i);
+	}
+}
+
+template<size_t activeSize>
+inline void NetworkCuda<activeSize>::calcNormAF(float* input, float* output) {
+	if (activeSize > 1024u) sumReduceInitialAF<1024ull><<<(((activeSize - 1u) >> 10u) + 1u), 1024u, 1024u * sizeof(float)>>>(input, output, activeSize);
+	else if (activeSize > 512u) sumReduceInitialAF<512ull><<<1u, 512u, 512u * sizeof(float)>>>(input, output, activeSize);
+	else if (activeSize > 256u) sumReduceInitialAF<256ull><<<1u, 256u, 256u * sizeof(float)>>>(input, output, activeSize);
+	else if (activeSize > 128u) sumReduceInitialAF<128ull><<<1u, 128u, 128u * sizeof(float)>>>(input, output, activeSize);
+	else if (activeSize > 64u) sumReduceInitialAF<64ull><<<1u, 64u, 64u * sizeof(float)>>>(input, output, activeSize);
+	else sumReduceInitialAF<32ull><<<1u, 32u, 32u * sizeof(float)>>>(input, output, activeSize);
+#pragma unroll
+	for (size_t i = (((activeSize - 1u) >> 10u) + 1u); i > 32u; i = (((i - 1u) >> 10u) + 1u)) {
+		if (i > 1024u) sumReduceContinued<1024ull><<<(((i - 1u) >> 10u) + 1u), 1024u, 1024u * sizeof(float)>>>(output, output, i);
+		else if (i > 512u) sumReduceContinued<512ull><<<1u, 512u, 512u * sizeof(float)>>>(output, output, i);
+		else if (i > 256u) sumReduceContinued<256ull><<<1u, 256u, 256u * sizeof(float)>>>(output, output, i);
+		else if (i > 128u) sumReduceContinued<128ull><<<1u, 128u, 128u * sizeof(float)>>>(output, output, i);
+		else if (i > 64u) sumReduceContinued<64ull><<<1u, 64u, 64u * sizeof(float)>>>(output, output, i);
+		else sumReduceContinued<32ull><<<1u, 32u, 32u * sizeof(float)>>>(output, output, i);
+	}
+}
+template<size_t activeSize>
+inline void NetworkCuda<activeSize>::calcValues() {
+	if (activeSize > 1024u) updateValues<1024ull><<<activeSize, 1024u, 1024u * sizeof(float)>>>(values, errors, weightsV, activeSize);
+	else if (activeSize > 512u) updateValues<512ull><<<activeSize, 512u, 512u * sizeof(float)>>>(values, errors, weightsV, activeSize);
+	else if (activeSize > 256u) updateValues<256ull><<<activeSize, 256u, 256u * sizeof(float)>>>(values, errors, weightsV, activeSize);
+	else if (activeSize > 128u) updateValues<128ull><<<activeSize, 128u, 128u * sizeof(float)>>>(values, errors, weightsV, activeSize);
+	else if (activeSize > 64u) updateValues<64ull><<<activeSize, 64u, 64u * sizeof(float)>>>(values, errors, weightsV, activeSize);
+	else updateValues<32ull><<<activeSize, 32u, 32u * sizeof(float)>>>(values, errors, weightsV, activeSize);
+}
+
+template<size_t activeSize>
+inline void NetworkCuda<activeSize>::calcErrors() {
+	if (activeSize > 1024u) updateErrors<1024ull><<<activeSize, 1024u, 1024u * sizeof(float)>>>(values, errors, weightsE, activeSize);
+	else if (activeSize > 512u) updateErrors<512ull><<<activeSize, 512u, 512u * sizeof(float)>>>(values, errors, weightsE, activeSize);
+	else if (activeSize > 256u) updateErrors<256ull><<<activeSize, 256u, 256u * sizeof(float)>>>(values, errors, weightsE, activeSize);
+	else if (activeSize > 128u) updateErrors<128ull><<<activeSize, 128u, 128u * sizeof(float)>>>(values, errors, weightsE, activeSize);
+	else if (activeSize > 64u) updateErrors<64ull><<<activeSize, 64u, 64u * sizeof(float)>>>(values, errors, weightsE, activeSize);
+	else updateErrors<32ull><<<activeSize, 32u, 32u * sizeof(float)>>>(values, errors, weightsE, activeSize);
+}
+template<size_t activeSize>
+inline void NetworkCuda<activeSize>::calcWeights() {
+	updateWeights<<<((((activeSize * activeSize) - 1u) >> 10u) + 1u), 1024u>>>(values, errors, weightsV, weightsE, valuesN, activeSize * activeSize);
+}
+
+//template<size_t activeSize>
+//void NetworkCuda<activeSize>::testVectorNormalization() {
+//	std::srand(3728172);
+//	float testVector_h[activeSize];
+//	for (size_t i = 0ull; i < activeSize; i++) testVector_h[i] = 2.0f * ((float)std::rand() / (float)RAND_MAX) - 1.0f;
+//	float result_h = 0.0f;
+//	for (size_t i = 0ull; i < activeSize; i++) {
+//		result_h += testVector_h[i] * testVector_h[i];
+//	}
+//	float* testVector_d = nullptr;
+//	float* testVectorN_d = nullptr;
+//	cudaMalloc((void**)&testVector_d, activeSize * sizeof(float));
+//	cudaMalloc((void**)&testVectorN_d, activeSize * sizeof(float));
+//	cudaMemcpy(testVector_d, testVector_h, activeSize * sizeof(float), cudaMemcpyHostToDevice);
+//	setZero<<<((activeSize + 1u) >> 10u), 1024u>>>(testVectorN_d, activeSize);
+//	calcNorm(testVector_d, testVectorN_d);
+//	float result_d = 0.0f;
+//	cudaMemcpy(&result_d, testVectorN_d, sizeof(float), cudaMemcpyDeviceToHost);
+//	std::cout << "Host Result: " << result_h << ", Device Result: " << result_d << '\n';
+//	for (size_t i = 0ull; i < activeSize; i++) testVector_h[i] = 2.0f * ((float)std::rand() / (float)RAND_MAX) - 1.0f;
+//	result_h = 0.0f;
+//	for (size_t i = 0ull; i < activeSize; i++) {
+//		result_h += testVector_h[i] * testVector_h[i];
+//	}
+//	cudaMemcpy(testVector_d, testVector_h, activeSize * sizeof(float), cudaMemcpyHostToDevice);
+//	setZero << <((activeSize + 1u) >> 10u), 1024u >> > (testVectorN_d, activeSize);
+//	calcNorm(testVector_d, testVectorN_d);
+//	result_d = 0.0f;
+//	cudaMemcpy(&result_d, testVectorN_d, sizeof(float), cudaMemcpyDeviceToHost);
+//	std::cout << "Host Result: " << result_h << ", Device Result: " << result_d << '\n';
+//	cudaFree(testVector_d);
+//	cudaFree(testVectorN_d);
+//};
 
 //template<size_t activeSize>
 //void NetworkCuda<activeSize>::testMatrixMultiplication() {

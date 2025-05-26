@@ -22,6 +22,12 @@ class NetworkCuda {
 	float* weightsV;
 	float* weightsE;
 
+	inline void calcNorm(float* input, float* output);
+	inline void calcNormAF(float* input,float* output);
+	inline void calcValues();
+	inline void calcErrors();
+	inline void calcWeights();
+
 public:
 
 	NetworkCuda();
@@ -32,9 +38,19 @@ public:
 	const size_t const getBlockSize() const { return 1024ull; };
 	const size_t const getGridSize() const { return (activeSize / getBlockSize()) + 1ull; };
 
-	float run();
+	void reset();
+	void resetValues();
+	void resetNValues();
+	void resetErrors();
+	void resetNErrors();
+	void resetMatrixValues();
+	void resetMatrixErrors();
+
+	float train(float* input, float* output, uint32_t* inputIDs, uint32_t* outputIDs, uint32_t sizeI, uint32_t sizeO);
 	
 	//void testMatrixMultiplication();
+
+	//void testVectorNormalization();
 };
 
-template class NetworkCuda<4096u>;
+template class NetworkCuda<64u>;
