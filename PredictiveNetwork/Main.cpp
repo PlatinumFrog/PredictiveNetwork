@@ -20,7 +20,6 @@ constexpr uint32_t viewHeight = 720;
 
 constexpr uint32_t inputSize = 9u;
 constexpr uint32_t outputSize = 8u;
-constexpr float TAU = 6.28318530718f;
 
 void GLAPIENTRY MessageCallback(
 	GLenum source,
@@ -113,7 +112,7 @@ int main(int argc, char* argv[]) {
 
 	float trainingUpdateParam = 0.0f;
 
-	NetworkCuda<64u> n1;
+	NetworkCuda<4096u> n1;
 
 	const bool* keystates = SDL_GetKeyboardState(NULL);
 	bool loop = true;
@@ -163,7 +162,7 @@ int main(int argc, char* argv[]) {
 
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-		/*n1.draw();*/
+		n1.draw();
 
 		SDL_GL_SwapWindow(window);
 
