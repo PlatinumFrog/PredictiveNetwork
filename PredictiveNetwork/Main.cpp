@@ -3,7 +3,7 @@
 
 #include <SDL3/SDL.h>
 
-#include "Network.h"
+#include "NetworkCuda.cuh"
 
 constexpr uint32_t step1 = 32u;
 constexpr uint32_t step2 = 2u * step1;
@@ -18,9 +18,8 @@ constexpr float range = 256.0f;
 constexpr uint32_t viewWidth = 1280;
 constexpr uint32_t viewHeight = 720;
 
-constexpr uint32_t inputSize = 9u;
+constexpr uint32_t inputSize = 8u;
 constexpr uint32_t outputSize = 8u;
-
 
 void GLAPIENTRY MessageCallback(
 	GLenum source,
@@ -99,20 +98,21 @@ int main(int argc, char* argv[]) {
 	glCullFace(GL_BACK);
 	glEnable(GL_MULTISAMPLE);
 
-	Network n1;
 	float input[inputSize];
 	uint32_t inputI[inputSize];
 	for (uint32_t i = 0u; i < inputSize; i++) {
-		input[i] = 0.0f, inputI[i] = i;
+		input[i] = 0.0f, inputI[i] = i * 8u;
 	}
+	//inputI[8u] = 43u;
 	float output[outputSize];
 	uint32_t outputI[outputSize];
 	for (uint32_t i = 0u; i < outputSize; i++) {
-		output[i] = 0.0f, outputI[i] = inputSize + i;
+		output[i] = 0.0f, outputI[i] = (inputSize + i) * 8u;
 	}
 
 	float trainingUpdateParam = 0.0f;
 
+	NetworkCuda<256u> n1;
 
 	const bool* keystates = SDL_GetKeyboardState(NULL);
 	bool loop = true;
@@ -147,22 +147,16 @@ int main(int argc, char* argv[]) {
 		input[5] = std::cos(TAU * ((trainingUpdateParam + step5) / range));
 		input[6] = std::cos(TAU * ((trainingUpdateParam + step6) / range));
 		input[7] = std::cos(TAU * ((trainingUpdateParam + step7) / range));
-		input[8] = trainingUpdateParam;
-		if (keystates[SDL_SCANCODE_SPACE]) n1.run(input, inputI, inputSize);
-		else if (keystates[SDL_SCANCODE_UP]) n1.sleep();
-		else {
-			output[1] = std::cos(TAU * (trainingUpdateParam / range));
-			output[2] = std::cos(TAU * ((trainingUpdateParam + step1) / range));
-			output[3] = std::cos(TAU * ((trainingUpdateParam + step2) / range));
-			output[4] = std::cos(TAU * ((trainingUpdateParam + step3) / range));
-			output[5] = std::cos(TAU * ((trainingUpdateParam + step4) / range));
-			output[6] = std::cos(TAU * ((trainingUpdateParam + step5) / range));
-			output[7] = std::cos(TAU * ((trainingUpdateParam + step6) / range));
-			output[0] = std::cos(TAU * ((trainingUpdateParam + step7) / range));
-			n1.train(input, output, inputI, outputI, inputSize, outputSize);
-		}
-
-		n1.print();
+		//input[8] = 2.0f * (trainingUpdateParam / range) - 1.0f;
+		output[1] = std::cos(TAU * (trainingUpdateParam / range));
+		output[2] = std::cos(TAU * ((trainingUpdateParam + step1) / range));
+		output[3] = std::cos(TAU * ((trainingUpdateParam + step2) / range));
+		output[4] = std::cos(TAU * ((trainingUpdateParam + step3) / range));
+		output[5] = std::cos(TAU * ((trainingUpdateParam + step4) / range));
+		output[6] = std::cos(TAU * ((trainingUpdateParam + step5) / range));
+		output[7] = std::cos(TAU * ((trainingUpdateParam + step6) / range));
+		output[0] = std::cos(TAU * ((trainingUpdateParam + step7) / range));
+		std::cout << "Energy: " << n1.train(input, output, inputI, outputI, inputSize, outputSize) << '\n';
 		trainingUpdateParam += 5.0f;
 		if (trainingUpdateParam >= range) trainingUpdateParam -= range;
 
