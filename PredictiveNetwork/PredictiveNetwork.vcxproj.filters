@@ -32,16 +32,19 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="Network.h">
-      <Filter>include</Filter>
-    </ClInclude>
-    <ClInclude Include="NetworkOld.h">
-      <Filter>include</Filter>
-    </ClInclude>
     <ClInclude Include="shader.h">
       <Filter>include</Filter>
     </ClInclude>
     <ClInclude Include="NetworkCuda.cuh">
+      <Filter>include</Filter>
+    </ClInclude>
+    <ClInclude Include="matrix.cuh">
+      <Filter>include</Filter>
+    </ClInclude>
+    <ClInclude Include="vector.cuh">
+      <Filter>include</Filter>
+    </ClInclude>
+    <ClInclude Include="CudaTexture.cuh">
       <Filter>include</Filter>
     </ClInclude>
   </ItemGroup>
