@@ -18,7 +18,7 @@ constexpr float range = 256.0f;
 constexpr uint32_t viewWidth = 1280;
 constexpr uint32_t viewHeight = 720;
 
-constexpr uint32_t inputSize = 9u;
+constexpr uint32_t inputSize = 8u;
 constexpr uint32_t outputSize = 8u;
 
 void GLAPIENTRY MessageCallback(
@@ -101,18 +101,18 @@ int main(int argc, char* argv[]) {
 	float input[inputSize];
 	uint32_t inputI[inputSize];
 	for (uint32_t i = 0u; i < inputSize; i++) {
-		input[i] = 0.0f, inputI[i] = i;
+		input[i] = 0.0f, inputI[i] = i * 8u;
 	}
-	inputI[8u] = 43u;
+	//inputI[8u] = 43u;
 	float output[outputSize];
 	uint32_t outputI[outputSize];
 	for (uint32_t i = 0u; i < outputSize; i++) {
-		output[i] = 0.0f, outputI[i] = inputSize + i;
+		output[i] = 0.0f, outputI[i] = (inputSize + i) * 8u;
 	}
 
 	float trainingUpdateParam = 0.0f;
 
-	NetworkCuda<4096u> n1;
+	NetworkCuda<256u> n1;
 
 	const bool* keystates = SDL_GetKeyboardState(NULL);
 	bool loop = true;
@@ -147,7 +147,7 @@ int main(int argc, char* argv[]) {
 		input[5] = std::cos(TAU * ((trainingUpdateParam + step5) / range));
 		input[6] = std::cos(TAU * ((trainingUpdateParam + step6) / range));
 		input[7] = std::cos(TAU * ((trainingUpdateParam + step7) / range));
-		input[8] = 2.0f * (trainingUpdateParam / range) - 1.0f;
+		//input[8] = 2.0f * (trainingUpdateParam / range) - 1.0f;
 		output[1] = std::cos(TAU * (trainingUpdateParam / range));
 		output[2] = std::cos(TAU * ((trainingUpdateParam + step1) / range));
 		output[3] = std::cos(TAU * ((trainingUpdateParam + step2) / range));

@@ -278,6 +278,21 @@ __global__ void setNodePos(float* positions, size_t size) {
 	positions[id + 1u] = y;
 }
 
+__global__ void setWeightPos(float* posW, float* posN, uint32_t sizeV, uint32_t sizeM) {
+	uint32_t id = (blockIdx.x * blockDim.x) + threadIdx.x;
+	if (id < sizeM) {
+		uint32_t x1 = 2u * (id % sizeV);
+		uint32_t x2 = 2u * (id / sizeV);
+		uint32_t y1 = x1 + 1u;
+		uint32_t y2 = x2 + 1u;
+		uint32_t idw = 4u * id;
+		posW[idw] = posN[x1];
+		posW[idw + 1u] = posN[y1];
+		posW[idw + 2u] = posN[x2];
+		posW[idw + 3u] = posN[y2];
+	}
+}
+
 template<size_t activeSize>
 NetworkCuda<activeSize>::NetworkCuda():
 	values(nullptr),
@@ -292,8 +307,8 @@ NetworkCuda<activeSize>::NetworkCuda():
 	cudaMalloc((void**)&valuesN, activeSize * sizeof(float));
 	//cudaMalloc((void**)&errors, activeSize * sizeof(float));
 	cudaMalloc((void**)&errorsN, activeSize * sizeof(float));
-	cudaMalloc((void**)&weightsV, activeSize * activeSize * sizeof(float));
-	cudaMalloc((void**)&weightsE, activeSize * activeSize * sizeof(float));
+	//cudaMalloc((void**)&weightsV, activeSize * activeSize * sizeof(float));
+	//cudaMalloc((void**)&weightsE, activeSize * activeSize * sizeof(float));
 	//cudaMalloc((void**)&nodePos, 2u * activeSize * sizeof(float));
 	
 	glGenBuffers(1u, &nodePosVBO);
@@ -316,39 +331,79 @@ NetworkCuda<activeSize>::NetworkCuda():
 	glBindBuffer(GL_ARRAY_BUFFER, 0u);
 	glBindVertexArray(0u);
 
-	cudaGraphicsGLRegisterBuffer(&cgrNodePos, nodePosVBO, cudaGraphicsRegisterFlagsWriteDiscard);
-	cudaGraphicsGLRegisterBuffer(&cgrValues, nodeValVBO, cudaGraphicsRegisterFlagsWriteDiscard);
-	cudaGraphicsGLRegisterBuffer(&cgrErrors, nodeErrVBO, cudaGraphicsRegisterFlagsWriteDiscard);
+	glGenBuffers(1u, &weightPosVBO);
+	glGenBuffers(1u, &weightValVBO);
+	glGenBuffers(1u, &weightErrVBO);
+	glGenVertexArrays(1u, &weightVAO);
+	glBindVertexArray(weightVAO);
+	glBindBuffer(GL_ARRAY_BUFFER, weightPosVBO);
+	glBufferData(GL_ARRAY_BUFFER, 4u * activeSize * activeSize * sizeof(float), NULL, GL_DYNAMIC_DRAW);
+	glVertexAttribPointer(0, 4, GL_FLOAT, GL_FALSE, 0, 0);
+	glEnableVertexAttribArray(0);
+	glBindBuffer(GL_ARRAY_BUFFER, weightValVBO);
+	glBufferData(GL_ARRAY_BUFFER, activeSize * activeSize * sizeof(float), NULL, GL_DYNAMIC_DRAW);
+	glVertexAttribPointer(1, 1, GL_FLOAT, GL_FALSE, 0, 0);
+	glEnableVertexAttribArray(1);
+	glBindBuffer(GL_ARRAY_BUFFER, weightErrVBO);
+	glBufferData(GL_ARRAY_BUFFER, activeSize * activeSize * sizeof(float), NULL, GL_DYNAMIC_DRAW);
+	glVertexAttribPointer(2, 1, GL_FLOAT, GL_FALSE, 0, 0);
+	glEnableVertexAttribArray(2);
+	glBindBuffer(GL_ARRAY_BUFFER, 0u);
+	glBindVertexArray(0u);
+
+	cudaGraphicsGLRegisterBuffer(&cgrNPositn, nodePosVBO, cudaGraphicsRegisterFlagsWriteDiscard);
+	cudaGraphicsGLRegisterBuffer(&cgrNValues, nodeValVBO, cudaGraphicsRegisterFlagsWriteDiscard);
+	cudaGraphicsGLRegisterBuffer(&cgrNErrors, nodeErrVBO, cudaGraphicsRegisterFlagsWriteDiscard);
+	cudaGraphicsGLRegisterBuffer(&cgrWPositn, weightPosVBO, cudaGraphicsRegisterFlagsWriteDiscard);
+	cudaGraphicsGLRegisterBuffer(&cgrWValues, weightValVBO, cudaGraphicsRegisterFlagsWriteDiscard);
+	cudaGraphicsGLRegisterBuffer(&cgrWErrors, weightErrVBO, cudaGraphicsRegisterFlagsWriteDiscard);
+
 
 	nodeShader = Shader::create("nodeShader.vert", "nodeShader.geom", "nodeShader.frag");
-	//weightShader = Shader::create("weightShader.vert", "weightShader.geom", "weightShader.frag");
+	weightShader = Shader::create("weightShader.vert", "weightShader.geom", "weightShader.frag");
 	
 	CudaEnableValues();
 	CudaEnableErrors();
+	CudaEnableWeights();
 	reset();
 	CudaDisableErrors();
 	CudaDisableValues();
+	CudaDisableWeights();
+
 	CudaEnableNodePos();
-	resetPositions();
+	resetNodePositions();
 	CudaDisableNodePos();
+
+	CudaEnableWeightPos();
+	resetWeightPositions();
+	CudaDisableWeightPos();
 };
 
 template<size_t activeSize>
 NetworkCuda<activeSize>::~NetworkCuda() {
-	cudaGraphicsUnregisterResource(cgrNodePos);
-	cudaGraphicsUnregisterResource(cgrValues);
-	cudaGraphicsUnregisterResource(cgrErrors);
+	cudaGraphicsUnregisterResource(cgrNPositn);
+	cudaGraphicsUnregisterResource(cgrNValues);
+	cudaGraphicsUnregisterResource(cgrNErrors);
 	glDeleteBuffers(1, &nodePosVBO);
 	glDeleteBuffers(1, &nodeValVBO);
 	glDeleteBuffers(1, &nodeErrVBO);
 	glDeleteVertexArrays(1, &nodeVAO);
+
+	cudaGraphicsUnregisterResource(cgrWPositn);
+	cudaGraphicsUnregisterResource(cgrWValues);
+	cudaGraphicsUnregisterResource(cgrWErrors);
+	glDeleteBuffers(1, &weightPosVBO);
+	glDeleteBuffers(1, &weightValVBO);
+	glDeleteBuffers(1, &weightErrVBO);
+	glDeleteVertexArrays(1, &weightVAO);
+
 	//cudaFree(values);
 	cudaFree(valuesN);
 	//cudaFree(errors);
 	cudaFree(errorsN);
-	cudaFree(weightsV);
-	cudaFree(weightsE);
-	cudaFree(nodePos);
+	//cudaFree(weightsV);
+	//cudaFree(weightsE);
+	//cudaFree(nodePos);
 };
 
 template<size_t activeSize>
@@ -361,7 +416,7 @@ void NetworkCuda<activeSize>::reset() {
 	resetMatrixErrors();
 }
 template<size_t activeSize>
-void NetworkCuda<activeSize>::resetPositions() {
+void NetworkCuda<activeSize>::resetNodePositions() {
 	if (activeSize > 1024u) setNodePos<<<(((activeSize - 1u) >> 10u) + 1u), 1024u>>>(nodePos, activeSize);
 	else if (activeSize > 512u) setNodePos<<<1u, 1024u>>>(nodePos, activeSize);
 	else if (activeSize > 256u) setNodePos<<<1u, 512u>>>(nodePos, activeSize);
@@ -370,6 +425,12 @@ void NetworkCuda<activeSize>::resetPositions() {
 	else if (activeSize > 32u) setNodePos<<<1u, 64u>>>(nodePos, activeSize);
 	else setNodePos<<<1u, 32u>>>(nodePos, activeSize);
 }
+
+template<size_t activeSize>
+void NetworkCuda<activeSize>::resetWeightPositions() {
+	setWeightPos<<<((((activeSize * activeSize) - 1u) >> 10u) + 1u), 1024u>>>(weightPos, nodePos, activeSize, activeSize * activeSize);
+}
+
 template<size_t activeSize>
 void NetworkCuda<activeSize>::resetValues() {
 	if (activeSize > 1024u) setZero<<<(((activeSize - 1u) >> 10u) + 1u), 1024u>>>(values, activeSize);
@@ -437,6 +498,7 @@ float NetworkCuda<activeSize>::train(
 
 	CudaEnableValues();
 	CudaEnableErrors();
+	CudaEnableWeights();
 
 	cudaMalloc(&ptrV, sizeI * sizeof(float));
 	cudaMalloc(&ptrI, sizeI * sizeof(uint32_t));
@@ -459,6 +521,7 @@ float NetworkCuda<activeSize>::train(
 
 	CudaDisableErrors();
 	CudaDisableValues();
+	CudaDisableWeights();
 
 	float error = 0.0f;
 	cudaMemcpy(&error, errorsN, sizeof(float), cudaMemcpyDeviceToHost);
@@ -536,8 +599,8 @@ template<size_t activeSize>
 void NetworkCuda<activeSize>::CudaEnableValues() {
 	if (!(flags & 1u)) {
 		size_t size;
-		cudaGraphicsMapResources(1, &cgrValues, 0);
-		cudaGraphicsResourceGetMappedPointer((void**)&values, &size, cgrValues);
+		cudaGraphicsMapResources(1, &cgrNValues, 0);
+		cudaGraphicsResourceGetMappedPointer((void**)&values, &size, cgrNValues);
 		flags |= 1u;
 	}
 }
@@ -546,8 +609,8 @@ template<size_t activeSize>
 void NetworkCuda<activeSize>::CudaEnableErrors() {
 	if (!(flags & 2u)) {
 		size_t size;
-		cudaGraphicsMapResources(1, &cgrErrors, 0);
-		cudaGraphicsResourceGetMappedPointer((void**)&errors, &size, cgrErrors);
+		cudaGraphicsMapResources(1, &cgrNErrors, 0);
+		cudaGraphicsResourceGetMappedPointer((void**)&errors, &size, cgrNErrors);
 		flags |= 2u;
 	}
 }
@@ -556,31 +619,71 @@ template<size_t activeSize>
 void NetworkCuda<activeSize>::CudaEnableNodePos() {
 	if (!(flags & 4u)) {
 		size_t size;
-		cudaGraphicsMapResources(1, &cgrNodePos, 0);
-		cudaGraphicsResourceGetMappedPointer((void**)&nodePos, &size, cgrNodePos);
+		cudaGraphicsMapResources(1, &cgrNPositn, 0);
+		cudaGraphicsResourceGetMappedPointer((void**)&nodePos, &size, cgrNPositn);
 		flags |= 4u;
+	}
+}
+
+template<size_t activeSize>
+void NetworkCuda<activeSize>::CudaEnableWeights() {
+	if (!(flags & 8u)) {
+		size_t size;
+		cudaGraphicsMapResources(1, &cgrWValues, 0);
+		cudaGraphicsResourceGetMappedPointer((void**)&weightsV, &size, cgrWValues);
+		cudaGraphicsMapResources(1, &cgrWErrors, 0);
+		cudaGraphicsResourceGetMappedPointer((void**)&weightsE, &size, cgrWErrors);
+		flags |= 8u;
+	}
+}
+
+template<size_t activeSize>
+void NetworkCuda<activeSize>::CudaEnableWeightPos() {
+	if (!(flags & 16u)) {
+		size_t size;
+		cudaGraphicsMapResources(1, &cgrWPositn, 0);
+		cudaGraphicsResourceGetMappedPointer((void**)&weightPos, &size, cgrWPositn);
+		flags |= 16u;
 	}
 }
 
 template<size_t activeSize>
 void NetworkCuda<activeSize>::CudaDisableValues() {
 	if (flags & 1u) {
-		cudaGraphicsUnmapResources(1, &cgrValues, 0);
+		cudaGraphicsUnmapResources(1, &cgrNValues, 0);
 		flags &= ~1u;
 	}
 }
 template<size_t activeSize>
 void NetworkCuda<activeSize>::CudaDisableErrors() {
 	if (flags & 2u) {
-		cudaGraphicsUnmapResources(1, &cgrErrors, 0);
+		cudaGraphicsUnmapResources(1, &cgrNErrors, 0);
 		flags &= ~2u;
 	}
 }
 template<size_t activeSize>
 void NetworkCuda<activeSize>::CudaDisableNodePos() {
 	if (flags & 4u) {
-		cudaGraphicsUnmapResources(1, &cgrNodePos, 0);
+		cudaGraphicsUnmapResources(1, &cgrNPositn, 0);
 		flags &= ~4u;
+	}
+}
+
+template<size_t activeSize>
+void NetworkCuda<activeSize>::CudaDisableWeights() {
+	if (flags & 8u) {
+		size_t size;
+		cudaGraphicsUnmapResources(1, &cgrWValues, 0);
+		cudaGraphicsUnmapResources(1, &cgrWErrors, 0);
+		flags &= ~8u;
+	}
+}
+
+template<size_t activeSize>
+void NetworkCuda<activeSize>::CudaDisableWeightPos() {
+	if (flags & 16u) {
+		cudaGraphicsUnmapResources(1, &cgrWPositn, 0);
+		flags &= ~16u;
 	}
 }
 
@@ -590,6 +693,12 @@ void NetworkCuda<activeSize>::draw() {
 	glBindVertexArray(nodeVAO);
 	glUniform4f(3, 0.0f, 0.0f, minDrawRadius(), 1.0f);
 	glDrawArrays(GL_POINTS, 0, activeSize);
+
+	glUseProgram(weightShader);
+	glBindVertexArray(weightVAO);
+	glUniform4f(3, 0.0f, 0.0f, minDrawRadius(), 1.0f);
+	glDrawArrays(GL_POINTS, 0, activeSize * activeSize);
+
 }
 
 //template<size_t activeSize>

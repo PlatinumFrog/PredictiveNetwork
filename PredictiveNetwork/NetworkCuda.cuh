@@ -30,13 +30,17 @@ class NetworkCuda {
 	uint32_t flags;
 
 	GLuint
-		nodePosVBO, nodeValVBO, nodeErrVBO, nodeVAO;
-	GLuint nodeShader;
+	nodePosVBO, nodeValVBO, nodeErrVBO, nodeVAO, nodeShader,
+	weightPosVBO, weightValVBO, weightErrVBO, weightVAO, weightShader;
 
-		//weightPosVBO, weightCol1VBO, weightCol2VBO, weightVAO, weightShader;
-	cudaGraphicsResource* cgrValues;
-	cudaGraphicsResource* cgrErrors;
-	cudaGraphicsResource* cgrNodePos;
+
+	cudaGraphicsResource* cgrNPositn;
+	cudaGraphicsResource* cgrNValues;
+	cudaGraphicsResource* cgrNErrors;
+	cudaGraphicsResource* cgrWPositn;
+	cudaGraphicsResource* cgrWValues;
+	cudaGraphicsResource* cgrWErrors;
+
 	//cudaGraphicsResource* cgrWeights;
 
 	float* values;
@@ -47,6 +51,7 @@ class NetworkCuda {
 	float* weightsE;
 
 	float* nodePos;
+	float* weightPos;
 
 	inline void calcNorm(float* input, float* output);
 	inline void calcNormAF(float* input,float* output);
@@ -66,15 +71,20 @@ public:
 	void resetNErrors();
 	void resetMatrixValues();
 	void resetMatrixErrors();
-	void resetPositions();
+	void resetNodePositions();
+	void resetWeightPositions();
 
 	void CudaEnableValues();
 	void CudaEnableErrors();
 	void CudaEnableNodePos();
+	void CudaEnableWeights();
+	void CudaEnableWeightPos();
 
 	void CudaDisableValues();
 	void CudaDisableErrors();
 	void CudaDisableNodePos();
+	void CudaDisableWeights();
+	void CudaDisableWeightPos();
 
 	float train(float* input, float* output, uint32_t* inputIDs, uint32_t* outputIDs, uint32_t sizeI, uint32_t sizeO);
 	
@@ -85,4 +95,4 @@ public:
 	//void testVectorNormalization();
 };
 
-template class NetworkCuda<4096u>;
+template class NetworkCuda<256u>;
