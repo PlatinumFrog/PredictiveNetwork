@@ -78,6 +78,7 @@ public:
 		
 		return shaderID;
 	}
+
 	static GLuint create(
 		const std::string& vertexFilename,
 		const std::string& geometryFilename,
@@ -109,6 +110,7 @@ public:
 #endif
 		return shaderID;
 	}
+
 	static GLuint create(
 		const std::string& vertexFilename,
 		const std::string& tessContFilename,
@@ -144,6 +146,7 @@ public:
 #endif
 		return shaderID;
 	}
+
 	static GLuint create(
 		const std::string& vertexFilename,
 		const std::string& tessContFilename,
