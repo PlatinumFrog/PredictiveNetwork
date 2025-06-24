@@ -1,21 +1,19 @@
 #pragma once
 #include <iostream>
+#include <cmath>
 #include <cuda_runtime.h>
 #include "device_launch_parameters.h"
 #include <glad.h>
 #include <cuda_gl_interop.h>
 #include "shader.h"
-#include <iomanip>
-#include <sstream>
-#include <string>
-#include <cmath>
+#include "CudaTexture.cuh"
 
 constexpr float PI = 3.14159265359f;
 constexpr float TAU = 6.28318530718f;
 constexpr float PD2 = 1.57079632679f;
 
 template<size_t activeSize>
-class NetworkCuda {
+class NetworkCudaTexture {
 
 	const float nodePositionMult() const { return 2.0f / ((float)activeSize - 1.0f); };
 	const float nodeIndexMult() const { return 1.0f / (float)activeSize; };
@@ -27,30 +25,13 @@ class NetworkCuda {
 	};
 	const float maxDrawRadius() const { return 1.0f; };
 
-	uint32_t flags;
 	float energy;
+	float4 aabb;
 
-	GLuint
-	nodePosVBO, nodeValVBO, nodeErrVBO, nodeVAO, nodeShader,
-	weightPosVBO, weightValVBO, weightErrVBO, weightVAO, weightShader;
+	CudaTexture values, errors, weightsE, weightsV;
 
-
-	cudaGraphicsResource* cgrNPositn;
-	cudaGraphicsResource* cgrNValues;
-	cudaGraphicsResource* cgrNErrors;
-	cudaGraphicsResource* cgrWPositn;
-	cudaGraphicsResource* cgrWValues;
-	cudaGraphicsResource* cgrWErrors;
-
-	float* values;
 	float* valuesN;
-	float* errors;
 	float* errorsN;
-	float* weightsV;
-	float* weightsE;
-
-	float* nodePos;
-	float* weightPos;
 
 	inline void calcNorm(float* input, float* output);
 	inline void calcNormAF(float* input,float* output);
@@ -60,8 +41,8 @@ class NetworkCuda {
 
 public:
 
-	NetworkCuda();
-	~NetworkCuda();
+	NetworkCudaTexture();
+	~NetworkCudaTexture();
 
 	void reset();
 	void resetValues();
@@ -70,28 +51,29 @@ public:
 	void resetNErrors();
 	void resetMatrixValues();
 	void resetMatrixErrors();
-	void resetNodePositions();
-	void resetWeightPositions();
 
 	void CudaEnableValues();
 	void CudaEnableErrors();
-	void CudaEnableNodePos();
 	void CudaEnableWeights();
-	void CudaEnableWeightPos();
 
 	void CudaDisableValues();
 	void CudaDisableErrors();
-	void CudaDisableNodePos();
 	void CudaDisableWeights();
-	void CudaDisableWeightPos();
 
 	void train(float* input, float* output, uint32_t* inputIDs, uint32_t* outputIDs, uint32_t sizeI, uint32_t sizeO);
+	void run(float* input, uint32_t* inputIDs, uint32_t sizeI);
+	void sleep();
 
 	void draw();
-
+	float getEnergy() const { return energy; };
 	//void testMatrixMultiplication();
 
 	//void testVectorNormalization();
+
+	void print() {
+		std::cout << "Energy: " << energy << '\n';
+	}
+
 };
 
-template class NetworkCuda<1024u>;
+template class NetworkCudaTexture<64u>;

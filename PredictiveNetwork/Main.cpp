@@ -3,23 +3,17 @@
 
 #include <SDL3/SDL.h>
 
-#include "NetworkCuda.cuh"
+#include "NetworkCudaTexture.cuh"
 
-constexpr uint32_t step1 = 32u;
-constexpr uint32_t step2 = 2u * step1;
-constexpr uint32_t step3 = 3u * step1;
-constexpr uint32_t step4 = 4u * step1;
-constexpr uint32_t step5 = 5u * step1;
-constexpr uint32_t step6 = 6u * step1;
-constexpr uint32_t step7 = 7u * step1;
+constexpr float step = 1.0f/256.0f;
 
-constexpr float range = 256.0f;
+constexpr float range = 1.0f;
 
 constexpr uint32_t viewWidth = 1280;
 constexpr uint32_t viewHeight = 720;
 
-constexpr uint32_t inputSize = 8u;
-constexpr uint32_t outputSize = 8u;
+constexpr uint32_t inputSize = 1u;
+constexpr uint32_t outputSize = 32u;
 
 void GLAPIENTRY MessageCallback(
 	GLenum source,
@@ -101,18 +95,17 @@ int main(int argc, char* argv[]) {
 	float input[inputSize];
 	uint32_t inputI[inputSize];
 	for (uint32_t i = 0u; i < inputSize; i++) {
-		input[i] = 0.0f, inputI[i] = i * 8u;
+		input[i] = 0.0f, inputI[i] = i;
 	}
-	//inputI[8u] = 43u;
 	float output[outputSize];
 	uint32_t outputI[outputSize];
 	for (uint32_t i = 0u; i < outputSize; i++) {
-		output[i] = 0.0f, outputI[i] = (inputSize + i) * 8u;
+		output[i] = 0.0f, outputI[i] = (inputSize + i);
 	}
 
 	float trainingUpdateParam = 0.0f;
 
-	NetworkCuda<256u> n1;
+	NetworkCudaTexture<64u> n1;
 
 	const bool* keystates = SDL_GetKeyboardState(NULL);
 	bool loop = true;
@@ -139,27 +132,20 @@ int main(int argc, char* argv[]) {
 
 		events.clear();
 
-		input[0] = std::cos(TAU * (trainingUpdateParam / range));
-		input[1] = std::cos(TAU * ((trainingUpdateParam + step1) / range));
-		input[2] = std::cos(TAU * ((trainingUpdateParam + step2) / range));
-		input[3] = std::cos(TAU * ((trainingUpdateParam + step3) / range));
-		input[4] = std::cos(TAU * ((trainingUpdateParam + step4) / range));
-		input[5] = std::cos(TAU * ((trainingUpdateParam + step5) / range));
-		input[6] = std::cos(TAU * ((trainingUpdateParam + step6) / range));
-		input[7] = std::cos(TAU * ((trainingUpdateParam + step7) / range));
-		//input[8] = 2.0f * (trainingUpdateParam / range) - 1.0f;
-		output[1] = std::cos(TAU * (trainingUpdateParam / range));
-		output[2] = std::cos(TAU * ((trainingUpdateParam + step1) / range));
-		output[3] = std::cos(TAU * ((trainingUpdateParam + step2) / range));
-		output[4] = std::cos(TAU * ((trainingUpdateParam + step3) / range));
-		output[5] = std::cos(TAU * ((trainingUpdateParam + step4) / range));
-		output[6] = std::cos(TAU * ((trainingUpdateParam + step5) / range));
-		output[7] = std::cos(TAU * ((trainingUpdateParam + step6) / range));
-		output[0] = std::cos(TAU * ((trainingUpdateParam + step7) / range));
-		std::cout << "Energy: " << n1.train(input, output, inputI, outputI, inputSize, outputSize) << '\n';
-		trainingUpdateParam += 5.0f;
+		for (uint32_t i = 0u; i < inputSize; i++) {
+			input[i] = std::sin(TAU*(trainingUpdateParam + (i * step)));
+		}
+		for (uint32_t i = 0u; i < outputSize; i++) {
+			float x = trainingUpdateParam + (i * step);
+			output[i] = sin(TAU * x) + 0.5 * sin(2.0f * TAU * x) + 0.333 * sin(3.0f * TAU * x) + 0.25 * sin(4.0f * TAU * x);
+		}
+		if (keystates[SDL_SCANCODE_UP] || std::isnan(n1.getEnergy())) n1.reset();
+		else if (keystates[SDL_SCANCODE_DOWN]) n1.sleep();
+		else if (keystates[SDL_SCANCODE_SPACE]) n1.run(input, inputI, inputSize);
+		else n1.train(input, output, inputI, outputI, inputSize, outputSize);
+		trainingUpdateParam += step;
 		if (trainingUpdateParam >= range) trainingUpdateParam -= range;
-
+		n1.print();
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
 		n1.draw();

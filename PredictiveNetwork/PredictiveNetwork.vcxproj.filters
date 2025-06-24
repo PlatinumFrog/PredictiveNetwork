@@ -47,6 +47,9 @@
     <ClInclude Include="CudaTexture.cuh">
       <Filter>include</Filter>
     </ClInclude>
+    <ClInclude Include="NetworkCudaTexture.cuh">
+      <Filter>include</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="shaders\nodeShader.frag">
@@ -70,9 +73,18 @@
     <None Include="..\.gitignore">
       <Filter>Git</Filter>
     </None>
+    <None Include="shaders\cudaTexture.frag">
+      <Filter>shaders</Filter>
+    </None>
+    <None Include="shaders\cudaTexture.vert">
+      <Filter>shaders</Filter>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <CudaCompile Include="NetworkCuda.cu">
+      <Filter>source</Filter>
+    </CudaCompile>
+    <CudaCompile Include="NetworkCudaTexture.cu">
       <Filter>source</Filter>
     </CudaCompile>
   </ItemGroup>

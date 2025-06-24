@@ -16,14 +16,14 @@
 
 class CudaTexture {
 	GLuint pbo, textureID, vao, vbo;
-	shader shaderProgram;
+	GLuint shaderProgram;
 	cudaGraphicsResource* cudaPBO;
 	matrix4 vertices;
 	uint32_t width, height;
 
 public:
 
-	float3* data;
+	float* data;
 	bool cudaEnabled;
 	bool isDrawable;
 
@@ -44,7 +44,8 @@ public:
 		height(0),
 		cudaEnabled(false),
 		data(nullptr),
-		isDrawable(false) {
+		isDrawable(false) 
+	{
 		// Initialize VAO and VBO
 		glGenVertexArrays(1, &vao);
 		glGenBuffers(1, &vbo);
@@ -85,18 +86,18 @@ public:
 			glGenTextures(1, &textureID);
 
 			glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbo);
-			glBufferData(GL_PIXEL_UNPACK_BUFFER, width * height * sizeof(float3), nullptr, GL_DYNAMIC_COPY);
+			glBufferData(GL_PIXEL_UNPACK_BUFFER, width * height * sizeof(float), nullptr, GL_DYNAMIC_COPY);
 			glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
 
 			glBindTexture(GL_TEXTURE_2D, textureID);
-			glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB32F, width, height, 0, GL_RGB, GL_FLOAT, nullptr);
+			glTexImage2D(GL_TEXTURE_2D, 0, GL_R32F, width, height, 0, GL_RED, GL_FLOAT, nullptr);
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 			glBindTexture(GL_TEXTURE_2D, 0);
 
-			err = cudaGraphicsGLRegisterBuffer(&cudaPBO, pbo, cudaGraphicsMapFlagsNone);
+			err = cudaGraphicsGLRegisterBuffer(&cudaPBO, pbo, cudaGraphicsMapFlagsWriteDiscard);
 			GPU_ERROR_RET("Error registering cuda buffer", err);
 
 			if (cudaWasEnabled) { if (!enableCuda()) return false; }
@@ -106,10 +107,10 @@ public:
 
 	void setRect(float x, float y, float width, float height) {
 		vertices = matrix4{
-			float4{x, y, 1.0f, 1.0f},
-			float4{x + width, y, 0.0f, 1.0f},
-			float4{x, y + height, 1.0f, 0.0f},
-			float4{x + width, y + height, 0.0f, 0.0f}
+			float4{x, y, 0.0f, 1.0f},
+			float4{x + width, y, 1.0f, 1.0f},
+			float4{x, y + height, 0.0f, 0.0f},
+			float4{x + width, y + height, 1.0f, 0.0f}
 		};
 		glBindBuffer(GL_ARRAY_BUFFER, vbo);
 		glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(vertices), &vertices);
@@ -144,14 +145,14 @@ public:
 		if (!isDrawable) return;
 		glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbo);
 		glBindTexture(GL_TEXTURE_2D, textureID);
-		glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, GL_RGB, GL_FLOAT, nullptr);
+		glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, GL_RED, GL_FLOAT, nullptr);
 		glBindTexture(GL_TEXTURE_2D, 0);
 		glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
 	}
 
 	void draw() const {
 		if (!isDrawable) return;
-		glUseProgram(shaderProgram.id);
+		glUseProgram(shaderProgram);
 		glBindVertexArray(vao);
 		glBindTexture(GL_TEXTURE_2D, textureID);
 		glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
@@ -170,12 +171,12 @@ public:
 	static friend void operator<<(CudaTexture& t1, CudaTexture& t2) {
 		t1.setRes(t2.width, t2.height);
 		if (t1.cudaEnabled && t2.cudaEnabled) {
-			cudaError_t err = cudaMemcpy(t1.data, t2.data, t1.width * t1.height * sizeof(float3), cudaMemcpyDeviceToDevice);
+			cudaError_t err = cudaMemcpy(t1.data, t2.data, t1.width * t1.height * sizeof(float), cudaMemcpyDeviceToDevice);
 			GPU_ERROR_ABT("Error copying cuda buffer", err);
 		} else {
 			t1.enableCuda();
 			t2.enableCuda();
-			cudaError_t err = cudaMemcpy(t1.data, t2.data, t1.width * t1.height * sizeof(float3), cudaMemcpyDeviceToDevice);
+			cudaError_t err = cudaMemcpy(t1.data, t2.data, t1.width * t1.height * sizeof(float), cudaMemcpyDeviceToDevice);
 			GPU_ERROR_ABT("Error copying cuda buffer", err);
 			t1.disableCuda();
 			t2.disableCuda();
