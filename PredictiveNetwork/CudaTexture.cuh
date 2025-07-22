@@ -16,7 +16,7 @@
 
 class CudaTexture {
 	GLuint pbo, textureID, vao, vbo;
-	GLuint shaderProgram;
+	static GLuint shaderProgram;
 	cudaGraphicsResource* cudaPBO;
 	matrix4 vertices;
 	uint32_t width, height;
@@ -32,7 +32,6 @@ public:
 		textureID(0),
 		vao(0),
 		vbo(0),
-		shaderProgram(Shader::create("CudaTexture.vert", "CudaTexture.frag")),
 		cudaPBO(nullptr),
 		vertices{
 			float4{ 1.0f,  1.0f, 0.0f, 0.0f},
@@ -46,6 +45,9 @@ public:
 		data(nullptr),
 		isDrawable(false) 
 	{
+
+		if (!shaderProgram) shaderProgram = Shader::create("CudaTexture.vert", "CudaTexture.frag");
+
 		// Initialize VAO and VBO
 		glGenVertexArrays(1, &vao);
 		glGenBuffers(1, &vbo);
@@ -166,6 +168,26 @@ public:
 
 	uint32_t getHeight() const {
 		return height;
+	}
+
+	CudaTexture& operator=(CudaTexture& t) {
+		vertices = t.vertices;
+		glBindBuffer(GL_ARRAY_BUFFER, vbo);
+		glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(vertices), &vertices);
+		glBindBuffer(GL_ARRAY_BUFFER, 0);
+		setRes(t.width, t.height);
+		if (cudaEnabled && t.cudaEnabled) {
+			cudaError_t err = cudaMemcpy(data, t.data, width * height * sizeof(float), cudaMemcpyDeviceToDevice);
+			GPU_ERROR_ABT("Error copying cuda buffer", err);
+		} else {
+			enableCuda();
+			t.enableCuda();
+			cudaError_t err = cudaMemcpy(data, t.data, width * height * sizeof(float), cudaMemcpyDeviceToDevice);
+			GPU_ERROR_ABT("Error copying cuda buffer", err);
+			disableCuda();
+			t.disableCuda();
+		}
+		return t;
 	}
 
 	static friend void operator<<(CudaTexture& t1, CudaTexture& t2) {

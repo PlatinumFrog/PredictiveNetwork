@@ -8,22 +8,8 @@
 #include "shader.h"
 #include "CudaTexture.cuh"
 
-constexpr float PI = 3.14159265359f;
-constexpr float TAU = 6.28318530718f;
-constexpr float PD2 = 1.57079632679f;
-
 template<size_t activeSize>
 class NetworkCudaTexture {
-
-	const float nodePositionMult() const { return 2.0f / ((float)activeSize - 1.0f); };
-	const float nodeIndexMult() const { return 1.0f / (float)activeSize; };
-	const float nodeRadiusMult() const { return PD2 / (float)activeSize; };
-	const float minDrawRadius() const {
-		const float s = 1.0f / std::cos(nodeRadiusMult());
-		const float t = std::tan(nodeRadiusMult());
-		return (s - t) / (s + t);
-	};
-	const float maxDrawRadius() const { return 1.0f; };
 
 	float energy;
 	float4 aabb;
@@ -42,32 +28,55 @@ class NetworkCudaTexture {
 public:
 
 	NetworkCudaTexture();
+	NetworkCudaTexture(NetworkCudaTexture& n);
+	NetworkCudaTexture(float4 ab);
 	~NetworkCudaTexture();
 
-	void reset();
-	void resetValues();
-	void resetNValues();
-	void resetErrors();
-	void resetNErrors();
-	void resetMatrixValues();
-	void resetMatrixErrors();
+	void zero();
+	void zeroValues();
+	void zeroNValues();
+	void zeroErrors();
+	void zeroNErrors();
+	void zeroMatrixValues();
+	void zeroMatrixErrors();
 
-	void CudaEnableValues();
-	void CudaEnableErrors();
-	void CudaEnableWeights();
+	void randomize();
+	void randomizeValues();
+	void randomizeErrors();
+	void randomizeMatrixValues();
+	void randomizeMatrixErrors();
 
-	void CudaDisableValues();
-	void CudaDisableErrors();
-	void CudaDisableWeights();
+	void displace();
+	void displaceValues();
+	void displaceErrors();
+	void displaceMatrixValues();
+	void displaceMatrixErrors();
 
-	void train(float* input, float* output, uint32_t* inputIDs, uint32_t* outputIDs, uint32_t sizeI, uint32_t sizeO);
-	void run(float* input, uint32_t* inputIDs, uint32_t sizeI);
-	void sleep();
+	void enableCuda();
+	void enableCudaValues();
+	void enableCudaErrors();
+	void enableCudaWeights();
+
+	void disableCuda();
+	void disableCudaValues();
+	void disableCudaErrors();
+	void disableCudaWeights();
+
+	float4 getAABB() const;
+	void setAABB(float x, float y, float width, float height);
+	void setAABB(float4 ab);
+
+	void setValues(uint32_t index, uint32_t size, float* data);
+	void getValues(uint32_t index, uint32_t size, float* data);
+
+	void setErrors(uint32_t index, uint32_t size, float* data);
+	void getErrors(uint32_t index, uint32_t size, float* data);
+
+	void train();
 
 	void draw();
 	float getEnergy() const { return energy; };
 	//void testMatrixMultiplication();
-
 	//void testVectorNormalization();
 
 	void print() {
@@ -76,4 +85,4 @@ public:
 
 };
 
-template class NetworkCudaTexture<64u>;
+template class NetworkCudaTexture<1024u>;

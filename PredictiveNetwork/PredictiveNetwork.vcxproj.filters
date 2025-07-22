@@ -19,6 +19,9 @@
     <Filter Include="Git">
       <UniqueIdentifier>{52bb35f0-a1ef-40d5-9e7d-e448c4ba73c9}</UniqueIdentifier>
     </Filter>
+    <Filter Include="testing">
+      <UniqueIdentifier>{406535ac-b945-45a5-8abe-0d4f4b66d257}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Main.cpp">
@@ -30,12 +33,10 @@
     <ClCompile Include="gladRelease\src\glad.c">
       <Filter>ReleaseGL</Filter>
     </ClCompile>
+    <ClCompile Include="plot.h" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="shader.h">
-      <Filter>include</Filter>
-    </ClInclude>
-    <ClInclude Include="NetworkCuda.cuh">
       <Filter>include</Filter>
     </ClInclude>
     <ClInclude Include="matrix.cuh">
@@ -81,9 +82,6 @@
     </None>
   </ItemGroup>
   <ItemGroup>
-    <CudaCompile Include="NetworkCuda.cu">
-      <Filter>source</Filter>
-    </CudaCompile>
     <CudaCompile Include="NetworkCudaTexture.cu">
       <Filter>source</Filter>
     </CudaCompile>

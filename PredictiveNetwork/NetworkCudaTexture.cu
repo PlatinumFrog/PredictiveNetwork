@@ -3,15 +3,15 @@
 #define GPU_ERROR_RET(msg, err) if(err != cudaSuccess) { std::cerr << "\n>> " __FILE__ " at line " << __LINE__ << ":\n<< " #msg << ": " << cudaGetErrorString(err) << std::endl; return false; }
 #define GPU_ERROR_ABT(msg, err) if(err != cudaSuccess) { std::cerr << "\n>> " __FILE__ " at line " << __LINE__ << ":\n<< " #msg << ": " << cudaGetErrorString(err) << std::endl; abort(); }
 
-constexpr float trainingRate = 1.8f;
+constexpr float trainingRate = 0.25f;
 
 __device__ float AF(float x) {
-	return x / (1.0f + abs(x));
+	return 1.0f / (1.0f + (x * x));
 }
 
 __device__ float AFD(float x) {
-	float i = (1.0f + std::abs(x));
-	return 1.0f / (i * i);
+	float i = 1.0f + (x * x);
+	return -2.0f * (x / (i * i));
 }
 
 //// Sum reduction from https://developer.download.nvidia.com/assets/cuda/files/reduction.pdf
@@ -207,33 +207,13 @@ __global__ void setValues(
 	uint32_t s
 ) {
 	uint32_t id = (blockIdx.x * blockDim.x) + threadIdx.x;
-	if(id < s) 
-		output[inputIDs[id]] = input[id];
+	if(id < s) output[inputIDs[id]] = input[id];
 }
 
-__global__ void setNodePos(float* positions, size_t size) {
-	uint32_t i = (blockIdx.x * blockDim.x) + threadIdx.x;
-	float j = (float)(i) * (TAU / (float)size);
-	float x = std::cos(j);
-	float y = std::sin(j);
-	uint32_t id = 2u * i;
-	positions[id] = x;
-	positions[id + 1u] = y;
-}
 
-__global__ void setWeightPos(float* posW, float* posN, uint32_t sizeV, uint32_t sizeM) {
+__global__ void displaceData(float* data, float* disp, size_t size) {
 	uint32_t id = (blockIdx.x * blockDim.x) + threadIdx.x;
-	if (id < sizeM) {
-		uint32_t x1 = 2u * (id % sizeV);
-		uint32_t x2 = 2u * (id / sizeV);
-		uint32_t y1 = x1 + 1u;
-		uint32_t y2 = x2 + 1u;
-		uint32_t idw = 4u * id;
-		posW[idw] = posN[x1];
-		posW[idw + 1u] = posN[y1];
-		posW[idw + 2u] = posN[x2];
-		posW[idw + 3u] = posN[y2];
-	}
+	if (id < size) data[id] += disp[id];
 }
 
 template<size_t activeSize>
@@ -256,7 +236,45 @@ NetworkCudaTexture<activeSize>::NetworkCudaTexture():
 	weightsE.setRect(0.0, -1.0, 1.0, 1.0);
 	weightsE.setRes(activeSize, activeSize);
 
-	reset();
+	zero();
+};
+
+template<size_t activeSize>
+NetworkCudaTexture<activeSize>::NetworkCudaTexture(NetworkCudaTexture& n):
+	energy(n.energy),
+	aabb(n.aabb),
+	valuesN(nullptr),
+	errorsN(nullptr)
+{
+	cudaMalloc((void**)&valuesN, activeSize * sizeof(float));
+	cudaMalloc((void**)&errorsN, activeSize * sizeof(float));
+	cudaMemcpy(valuesN, n.valuesN, activeSize * sizeof(float), cudaMemcpyDeviceToDevice);
+	cudaMemcpy(errorsN, n.errorsN, activeSize * sizeof(float), cudaMemcpyDeviceToDevice);
+	
+	values = n.values;
+	errors = n.errors;
+	weightsV = n.weightsV;
+	weightsE = n.weightsE;
+
+	
+
+};
+
+template<size_t activeSize>
+NetworkCudaTexture<activeSize>::NetworkCudaTexture(float4 ab):
+	energy(0.0f),
+	aabb(ab),
+	valuesN(nullptr),
+	errorsN(nullptr) 
+{
+	cudaMalloc((void**)&valuesN, activeSize * sizeof(float));
+	cudaMalloc((void**)&errorsN, activeSize * sizeof(float));
+	const uint32_t wh = (uint32_t)std::ceil(std::sqrt(activeSize));
+	values.setRes(wh, wh);
+	errors.setRes(wh, wh);
+	weightsV.setRes(activeSize, activeSize);
+	weightsE.setRes(activeSize, activeSize);
+	setAABB(n.aabb);
 };
 
 template<size_t activeSize>
@@ -266,17 +284,17 @@ NetworkCudaTexture<activeSize>::~NetworkCudaTexture() {
 };
 
 template<size_t activeSize>
-void NetworkCudaTexture<activeSize>::reset() {
-	resetValues();
-	resetNValues();
-	resetErrors();
-	resetNErrors();
-	resetMatrixValues();
-	resetMatrixErrors();
+void NetworkCudaTexture<activeSize>::zero() {
+	zeroValues();
+	zeroNValues();
+	zeroErrors();
+	zeroNErrors();
+	zeroMatrixValues();
+	zeroMatrixErrors();
 }
 
 template<size_t activeSize>
-void NetworkCudaTexture<activeSize>::resetValues() {
+void NetworkCudaTexture<activeSize>::zeroValues() {
 	values.enableCuda();
 	if (activeSize > 1024u) setZero<<<(((activeSize - 1u) >> 10u) + 1u), 1024u>>>(values.data, activeSize);
 	else if (activeSize > 512u) setZero<<<1u, 1024u>>>(values.data, activeSize);
@@ -289,7 +307,7 @@ void NetworkCudaTexture<activeSize>::resetValues() {
 }
 
 template<size_t activeSize>
-void NetworkCudaTexture<activeSize>::resetNValues() {
+void NetworkCudaTexture<activeSize>::zeroNValues() {
 	if (activeSize > 1024u) setZero<<<(((activeSize - 1u) >> 10u) + 1u), 1024u >> > (valuesN, activeSize);
 	else if (activeSize > 512u) setZero<<<1u, 1024u>>>(valuesN, activeSize);
 	else if (activeSize > 256u) setZero<<<1u, 512u>>>(valuesN, activeSize);
@@ -300,7 +318,7 @@ void NetworkCudaTexture<activeSize>::resetNValues() {
 }
 
 template<size_t activeSize>
-void NetworkCudaTexture<activeSize>::resetErrors() {
+void NetworkCudaTexture<activeSize>::zeroErrors() {
 	errors.enableCuda();
 	if (activeSize > 1024u) setZero<<<(((activeSize - 1u) >> 10u) + 1u), 1024u>>>(errors.data, activeSize);
 	else if (activeSize > 512u) setZero<<<1u, 1024u>>>(errors.data, activeSize);
@@ -313,7 +331,7 @@ void NetworkCudaTexture<activeSize>::resetErrors() {
 }
 
 template<size_t activeSize>
-void NetworkCudaTexture<activeSize>::resetNErrors() {
+void NetworkCudaTexture<activeSize>::zeroNErrors() {
 	if (activeSize > 1024u) setZero << <(((activeSize - 1u) >> 10u) + 1u), 1024u >> > (errorsN, activeSize);
 	else if (activeSize > 512u) setZero<<<1u, 1024u>>>(errorsN, activeSize);
 	else if (activeSize > 256u) setZero<<<1u, 512u>>>(errorsN, activeSize);
@@ -324,136 +342,151 @@ void NetworkCudaTexture<activeSize>::resetNErrors() {
 }      
 
 template<size_t activeSize>
-void NetworkCudaTexture<activeSize>::resetMatrixValues() {
+void NetworkCudaTexture<activeSize>::zeroMatrixValues() {
 	weightsV.enableCuda();
-	/*float* r = new float[activeSize * activeSize];
-	for (uint32_t u = 0u; u < activeSize * activeSize; u++) r[u] = ((2.0f * ((float)std::rand() / (float)RAND_MAX)) - 1.0f) * 0.001f;
-	cudaMemcpy(weightsV.data, r, activeSize * activeSize * sizeof(float), cudaMemcpyHostToDevice);*/
 	setZero<<<((((activeSize * activeSize) - 1u) >> 10u) + 1u), 1024u>>>(weightsV.data, activeSize * activeSize);
-	//delete[] r;
 	weightsV.disableCuda();
 }
+
 template<size_t activeSize>
-void NetworkCudaTexture<activeSize>::resetMatrixErrors() {
+void NetworkCudaTexture<activeSize>::zeroMatrixErrors() {
 	weightsE.enableCuda();
-	/*float* r = new float[activeSize * activeSize];
-	for (uint32_t u = 0u; u < activeSize * activeSize; u++) r[u] = ((2.0f * ((float)std::rand() / (float)RAND_MAX)) - 1.0f) * 0.001f;
-	cudaMemcpy(weightsE.data, r, activeSize * activeSize * sizeof(float), cudaMemcpyHostToDevice);*/
 	setZero<<<((((activeSize * activeSize) - 1u) >> 10u) + 1u), 1024u>>>(weightsE.data, activeSize * activeSize);
-	//delete[] r;
 	weightsE.disableCuda();
 }
 
 template<size_t activeSize>
-void NetworkCudaTexture<activeSize>::train(
-	float* input,
-	float* output,
-	uint32_t* inputIDs,
-	uint32_t* outputIDs,
-	uint32_t sizeI,
-	uint32_t sizeO
-) {
-	float* ptrV = nullptr;
-	uint32_t* ptrI = nullptr;
+void NetworkCudaTexture<activeSize>::randomize() {
+	randomizeValues();
+	randomizeErrors();
+	randomizeMatrixValues();
+	randomizeMatrixErrors();
+}
 
+template<size_t activeSize>
+void NetworkCudaTexture<activeSize>::randomizeValues() {
 	values.enableCuda();
-	errors.enableCuda();
-	weightsV.enableCuda();
-	weightsE.enableCuda();
+	float* r = new float[activeSize];
+	for (uint32_t u = 0u; u < activeSize; u++) r[u] = ((2.0f * ((float)std::rand() / (float)RAND_MAX)) - 1.0f) * 0.001f;
+	cudaMemcpy(values.data, r, activeSize * sizeof(float), cudaMemcpyHostToDevice);
+	delete[] r;
+	values.disableCuda();
+}
 
-	cudaMalloc(&ptrV, sizeI * sizeof(float));
-	cudaMalloc(&ptrI, sizeI * sizeof(uint32_t));
-	cudaMemcpy(ptrV, input, sizeI * sizeof(float), cudaMemcpyHostToDevice);
-	cudaMemcpy(ptrI, inputIDs, sizeI * sizeof(uint32_t), cudaMemcpyHostToDevice);
-	setValues<<<((sizeI - 1u) >> 5u) + 1u, 32u>>>(ptrV, values.data, ptrI, sizeI);
-	cudaFree(ptrV);
-	cudaFree(ptrI);
-	cudaMalloc(&ptrV, sizeO * sizeof(float));
-	cudaMalloc(&ptrI, sizeO * sizeof(uint32_t));
-	cudaMemcpy(ptrV, output, sizeO * sizeof(float), cudaMemcpyHostToDevice);
-	cudaMemcpy(ptrI, outputIDs, sizeO * sizeof(uint32_t), cudaMemcpyHostToDevice);
-	setValues<<<((sizeO - 1u) >> 5u) + 1u, 32u>>> (ptrV, values.data, ptrI, sizeO);
-	cudaFree(ptrV);
-	cudaFree(ptrI);
+template<size_t activeSize>
+void NetworkCudaTexture<activeSize>::randomizeErrors() {
+	errors.enableCuda();
+	float* r = new float[activeSize];
+	for (uint32_t u = 0u; u < activeSize; u++) r[u] = ((2.0f * ((float)std::rand() / (float)RAND_MAX)) - 1.0f) * 0.001f;
+	cudaMemcpy(errors.data, r, activeSize * sizeof(float), cudaMemcpyHostToDevice);
+	delete[] r;
+	errors.disableCuda();
+}
+
+template<size_t activeSize>
+void NetworkCudaTexture<activeSize>::randomizeMatrixValues() {
+	weightsV.enableCuda();
+	float* r = new float[activeSize * activeSize];
+	for (uint32_t u = 0u; u < activeSize * activeSize; u++) r[u] = ((2.0f * ((float)std::rand() / (float)RAND_MAX)) - 1.0f) * 0.001f;
+	cudaMemcpy(weightsV.data, r, activeSize * activeSize * sizeof(float), cudaMemcpyHostToDevice);
+	delete[] r;
+	weightsV.disableCuda();
+}
+template<size_t activeSize>
+void NetworkCudaTexture<activeSize>::randomizeMatrixErrors() {
+	weightsE.enableCuda();
+	float* r = new float[activeSize * activeSize];
+	for (uint32_t u = 0u; u < activeSize * activeSize; u++) r[u] = ((2.0f * ((float)std::rand() / (float)RAND_MAX)) - 1.0f) * 0.001f;
+	cudaMemcpy(weightsE.data, r, activeSize * activeSize * sizeof(float), cudaMemcpyHostToDevice);
+	delete[] r;
+	weightsE.disableCuda();
+}
+
+template<size_t activeSize>
+void NetworkCudaTexture<activeSize>::displace() {
+	displaceValues();
+	displaceErrors();
+	displaceMatrixValues();
+	displaceMatrixErrors();
+}
+
+template<size_t activeSize>
+void NetworkCudaTexture<activeSize>::displaceValues() {
+	values.enableCuda();
+	float* rh = new float[activeSize];
+	for (uint32_t u = 0u; u < activeSize; u++) rh[u] = ((2.0f * ((float)std::rand() / (float)RAND_MAX)) - 1.0f) * 0.001f;
+	float* rd = nullptr;
+	cudaMalloc((void**)&rd, activeSize * sizeof(float));
+	cudaMemcpy(rd, rh, activeSize * sizeof(float), cudaMemcpyHostToDevice);
+	delete[] rh;
+	if (activeSize > 1024u) displaceData<<<(((activeSize - 1u) >> 10u) + 1u), 1024u>>>(values.data, rd, activeSize);
+	else if (activeSize > 512u) displaceData <<<1u, 1024u>>>(values.data, rd, activeSize);
+	else if (activeSize > 256u) displaceData <<<1u, 512u>>>(values.data, rd, activeSize);
+	else if (activeSize > 128u) displaceData <<<1u, 256u>>>(values.data, rd, activeSize);
+	else if (activeSize > 64u) displaceData <<<1u, 128u>>>(values.data, rd, activeSize);
+	else if (activeSize > 32u) displaceData <<<1u, 64u>>>(values.data, rd, activeSize);
+	else displaceData<<<1u, 32u>>>(values.data, rd, activeSize);
+	cudaFree(rd);
+	values.disableCuda();
+}
+
+template<size_t activeSize>
+void NetworkCudaTexture<activeSize>::displaceErrors() {
+	errors.enableCuda();
+	float* rh = new float[activeSize];
+	for (uint32_t u = 0u; u < activeSize; u++) rh[u] = ((2.0f * ((float)std::rand() / (float)RAND_MAX)) - 1.0f) * 0.001f;
+	float* rd = nullptr;
+	cudaMalloc((void**)&rd, activeSize * sizeof(float));
+	cudaMemcpy(rd, rh, activeSize * sizeof(float), cudaMemcpyHostToDevice);
+	delete[] rh;
+	if (activeSize > 1024u) displaceData << <(((activeSize - 1u) >> 10u) + 1u), 1024u >> > (errors.data, rd, activeSize);
+	else if (activeSize > 512u) displaceData << <1u, 1024u >> > (errors.data, rd, activeSize);
+	else if (activeSize > 256u) displaceData << <1u, 512u >> > (errors.data, rd, activeSize);
+	else if (activeSize > 128u) displaceData << <1u, 256u >> > (errors.data, rd, activeSize);
+	else if (activeSize > 64u) displaceData << <1u, 128u >> > (errors.data, rd, activeSize);
+	else if (activeSize > 32u) displaceData << <1u, 64u >> > (errors.data, rd, activeSize);
+	else displaceData << <1u, 32u >> > (errors.data, rd, activeSize);
+	cudaFree(rd);
+	errors.disableCuda();
+}
+
+template<size_t activeSize>
+void NetworkCudaTexture<activeSize>::displaceMatrixValues() {
+	weightsV.enableCuda();
+	float* rh = new float[activeSize];
+	for (uint32_t u = 0u; u < activeSize; u++) rh[u] = ((2.0f * ((float)std::rand() / (float)RAND_MAX)) - 1.0f) * 0.001f;
+	float* rd = nullptr;
+	cudaMalloc((void**)&rd, activeSize * sizeof(float));
+	cudaMemcpy(rd, rh, activeSize * sizeof(float), cudaMemcpyHostToDevice);
+	delete[] rh;
+	displaceData<<<((((activeSize * activeSize) - 1u) >> 10u) + 1u), 1024u>>>(weightsV.data, rd, activeSize * activeSize);
+	cudaFree(rd);
+	weightsV.disableCuda();
+}
+template<size_t activeSize>
+void NetworkCudaTexture<activeSize>::displaceMatrixErrors() {
+	weightsE.enableCuda();
+	float* rh = new float[activeSize];
+	for (uint32_t u = 0u; u < activeSize; u++) rh[u] = ((2.0f * ((float)std::rand() / (float)RAND_MAX)) - 1.0f) * 0.001f;
+	float* rd = nullptr;
+	cudaMalloc((void**)&rd, activeSize * sizeof(float));
+	cudaMemcpy(rd, rh, activeSize * sizeof(float), cudaMemcpyHostToDevice);
+	delete[] rh;
+	displaceData<<<((((activeSize * activeSize) - 1u) >> 10u) + 1u), 1024u >> > (weightsE.data, rd, activeSize * activeSize);
+	cudaFree(rd);
+	weightsE.disableCuda();
+}
+
+template<size_t activeSize>
+void NetworkCudaTexture<activeSize>::train() {
 	
 	calcErrors();
-	
-	resetNValues();
+	zeroNValues();
 	calcNormAF(values.data, valuesN);
-
-	calcValues();
-	
-	
-
 	calcWeights();
-
-	resetNErrors();
-	calcNorm(errors.data, errorsN);
-
-	values.disableCuda();
-	errors.disableCuda();
-	weightsV.disableCuda();
-	weightsE.disableCuda();
-
-	cudaMemcpy(&energy, errorsN, sizeof(float), cudaMemcpyDeviceToHost);
-}
-
-template<size_t activeSize>
-void NetworkCudaTexture<activeSize>::run(
-	float* input,
-	uint32_t* inputIDs,
-	uint32_t sizeI
-) {
-	float* ptrV = nullptr;
-	uint32_t* ptrI = nullptr;
-
-	values.enableCuda();
-	errors.enableCuda();
-	weightsV.enableCuda();
-	weightsE.enableCuda();
-
-	cudaMalloc(&ptrV, sizeI * sizeof(float));
-	cudaMalloc(&ptrI, sizeI * sizeof(uint32_t));
-	cudaMemcpy(ptrV, input, sizeI * sizeof(float), cudaMemcpyHostToDevice);
-	cudaMemcpy(ptrI, inputIDs, sizeI * sizeof(uint32_t), cudaMemcpyHostToDevice);
-	setValues<<<((sizeI - 1u) >> 5u) + 1u, 32u>>>(ptrV, values.data, ptrI, sizeI);
-	cudaFree(ptrV);
-	cudaFree(ptrI);
-
-	calcErrors();
 	calcValues();
-
-	resetNErrors();
+	zeroNErrors();
 	calcNorm(errors.data, errorsN);
-
-	values.disableCuda();
-	errors.disableCuda();
-	weightsV.disableCuda();
-	weightsE.disableCuda();
-
-	cudaMemcpy(&energy, errorsN, sizeof(float), cudaMemcpyDeviceToHost);
-}
-
-template<size_t activeSize>
-void NetworkCudaTexture<activeSize>::sleep() {
-
-	values.enableCuda();
-	errors.enableCuda();
-	weightsV.enableCuda();
-	weightsE.enableCuda();
-
-	calcErrors();
-	calcValues();
-	resetNValues();
-	calcNormAF(values.data, valuesN);
-	calcWeights();
-	resetNErrors();
-	calcNorm(errors.data, errorsN);
-
-	values.disableCuda();
-	errors.disableCuda();
-	weightsV.disableCuda();
-	weightsE.disableCuda();
 
 	cudaMemcpy(&energy, errorsN, sizeof(float), cudaMemcpyDeviceToHost);
 }
@@ -524,34 +557,95 @@ inline void NetworkCudaTexture<activeSize>::calcWeights() {
 }
 
 template<size_t activeSize>
-void NetworkCudaTexture<activeSize>::CudaEnableValues() {
+void NetworkCudaTexture<activeSize>::enableCudaValues() {
 	values.enableCuda();
 }
 
 template<size_t activeSize>
-void NetworkCudaTexture<activeSize>::CudaEnableErrors() {
+void NetworkCudaTexture<activeSize>::enableCudaErrors() {
 	errors.enableCuda();
 }
 
 template<size_t activeSize>
-void NetworkCudaTexture<activeSize>::CudaEnableWeights() {
+void NetworkCudaTexture<activeSize>::enableCudaWeights() {
 	weightsV.enableCuda();
 	weightsE.enableCuda();
 }
 
 template<size_t activeSize>
-void NetworkCudaTexture<activeSize>::CudaDisableValues() {
+void NetworkCudaTexture<activeSize>::disableCudaValues() {
 	values.disableCuda();
 }
 template<size_t activeSize>
-void NetworkCudaTexture<activeSize>::CudaDisableErrors() {
+void NetworkCudaTexture<activeSize>::disableCudaErrors() {
 	errors.disableCuda();
 }
 
 template<size_t activeSize>
-void NetworkCudaTexture<activeSize>::CudaDisableWeights() {
+void NetworkCudaTexture<activeSize>::disableCudaWeights() {
 	weightsV.disableCuda();
 	weightsE.disableCuda();
+}
+
+template<size_t activeSize>
+float4 NetworkCudaTexture<activeSize>::getAABB() const {
+	return aabb;
+}
+
+template<size_t activeSize>
+void NetworkCudaTexture<activeSize>::setAABB(float x, float y, float width, float height)
+{
+	float w = 0.5f * width, h = 0.5f * height;
+	values.setRect(x, y + h, w, h);
+	errors.setRect(x + w, y + h, w, h);
+	weightsE.setRect(x + w, y, w, h);
+	weightsV.setRect(x, y, w, h);
+}
+
+template<size_t activeSize>
+void NetworkCudaTexture<activeSize>::setAABB(float4 ab) {
+	float w = 0.5f * ab.z, h = 0.5f * ab.w;
+	values.setRect(ab.x, ab.y + h, w, h);
+	errors.setRect(ab.x + w, ab.y + h, w, h);
+	weightsE.setRect(ab.x + w, ab.y, w, h);
+	weightsV.setRect(ab.x, ab.y, w, h);
+}
+
+
+template<size_t activeSize>
+void NetworkCudaTexture<activeSize>::enableCuda() {
+	errors.enableCuda();
+	values.enableCuda();
+	weightsV.enableCuda();
+	weightsE.enableCuda();
+}
+
+template<size_t activeSize>
+void NetworkCudaTexture<activeSize>::disableCuda() {
+	errors.disableCuda();
+	values.disableCuda();
+	weightsV.disableCuda();
+	weightsE.disableCuda();
+}
+
+template<size_t activeSize>
+void NetworkCudaTexture<activeSize>::setValues(uint32_t index, uint32_t size, float* data) {
+	if (index + size <= activeSize) cudaMemcpy(values.data + index, data, size * sizeof(float), cudaMemcpyHostToDevice);
+}
+
+template<size_t activeSize>
+void NetworkCudaTexture<activeSize>::getValues(uint32_t index, uint32_t size, float* data) {
+	if (index + size <= activeSize) cudaMemcpy(data, values.data + index, size * sizeof(float), cudaMemcpyDeviceToHost);
+}
+
+template<size_t activeSize>
+void NetworkCudaTexture<activeSize>::setErrors(uint32_t index, uint32_t size, float* data) {
+	if (index + size <= activeSize) cudaMemcpy(errors.data + index, data, size * sizeof(float), cudaMemcpyHostToDevice);
+}
+
+template<size_t activeSize>
+void NetworkCudaTexture<activeSize>::getErrors(uint32_t index, uint32_t size, float* data) {
+	if (index + size <= activeSize) cudaMemcpy(data, errors.data + index, size * sizeof(float), cudaMemcpyDeviceToHost);
 }
 
 template<size_t activeSize>
@@ -565,100 +659,3 @@ void NetworkCudaTexture<activeSize>::draw() {
 	values.updateTexture();
 	values.draw();
 }
-
-//template<size_t activeSize>
-//void NetworkCuda<activeSize>::testVectorNormalization() {
-//	std::srand(3728172);
-//	float testVector_h[activeSize];
-//	for (size_t i = 0ull; i < activeSize; i++) testVector_h[i] = 2.0f * ((float)std::rand() / (float)RAND_MAX) - 1.0f;
-//	float result_h = 0.0f;
-//	for (size_t i = 0ull; i < activeSize; i++) {
-//		result_h += testVector_h[i] * testVector_h[i];
-//	}
-//	float* testVector_d = nullptr;
-//	float* testVectorN_d = nullptr;
-//	cudaMalloc((void**)&testVector_d, activeSize * sizeof(float));
-//	cudaMalloc((void**)&testVectorN_d, activeSize * sizeof(float));
-//	cudaMemcpy(testVector_d, testVector_h, activeSize * sizeof(float), cudaMemcpyHostToDevice);
-//	setZero<<<((activeSize + 1u) >> 10u), 1024u>>>(testVectorN_d, activeSize);
-//	calcNorm(testVector_d, testVectorN_d);
-//	float result_d = 0.0f;
-//	cudaMemcpy(&result_d, testVectorN_d, sizeof(float), cudaMemcpyDeviceToHost);
-//	std::cout << "Host Result: " << result_h << ", Device Result: " << result_d << '\n';
-//	for (size_t i = 0ull; i < activeSize; i++) testVector_h[i] = 2.0f * ((float)std::rand() / (float)RAND_MAX) - 1.0f;
-//	result_h = 0.0f;
-//	for (size_t i = 0ull; i < activeSize; i++) {
-//		result_h += testVector_h[i] * testVector_h[i];
-//	}
-//	cudaMemcpy(testVector_d, testVector_h, activeSize * sizeof(float), cudaMemcpyHostToDevice);
-//	setZero << <((activeSize + 1u) >> 10u), 1024u >> > (testVectorN_d, activeSize);
-//	calcNorm(testVector_d, testVectorN_d);
-//	result_d = 0.0f;
-//	cudaMemcpy(&result_d, testVectorN_d, sizeof(float), cudaMemcpyDeviceToHost);
-//	std::cout << "Host Result: " << result_h << ", Device Result: " << result_d << '\n';
-//	cudaFree(testVector_d);
-//	cudaFree(testVectorN_d);
-//};
-
-//template<size_t activeSize>
-//void NetworkCuda<activeSize>::testMatrixMultiplication() {
-//	const static uint32_t sizesM = activeSize * activeSize;
-//
-//	float* testVector_d = nullptr;
-//	float* testMatrix_d = nullptr;
-//	float* testResults_d = nullptr;
-//
-//	float* testVector_h = nullptr;
-//	float* testMatrix_h = nullptr;
-//	float* testResults_h = nullptr;
-//
-//	float* testResults_dh = nullptr;
-//
-//	testVector_h = new float[activeSize];
-//	testMatrix_h = new float[sizesM];
-//	testResults_h = new float[activeSize];
-//	testResults_dh = new float[activeSize];
-//
-//	std::srand(334);
-//
-//	for (uint32_t u = 0u; u < activeSize; u++) {
-//		testVector_h[u] = ((float)std::rand() / (float)RAND_MAX);
-//		testResults_h[u] = 0.0f;
-//		for (uint32_t v = 0u; v < activeSize; v++) {
-//			testMatrix_h[(activeSize * u) + v] = ((float)std::rand() / (float)RAND_MAX);
-//		}
-//	}
-//	cudaMalloc((void**)&testVector_d, activeSize * sizeof(float));
-//	cudaMalloc((void**)&testMatrix_d, sizesM * sizeof(float));
-//	cudaMalloc((void**)&testResults_d, activeSize * sizeof(float));
-//	cudaMemcpy(testVector_d, testVector_h, activeSize * sizeof(float), cudaMemcpyHostToDevice);
-//	cudaMemcpy(testResults_d, testResults_h, activeSize * sizeof(float), cudaMemcpyHostToDevice);
-//	cudaMemcpy(testMatrix_d, testMatrix_h, sizesM * sizeof(float), cudaMemcpyHostToDevice);
-//	//cudaDeviceSynchronize();
-//	for (uint32_t u = 0u; u < activeSize; u++) {
-//		for (uint32_t v = 0u; v < activeSize; v++) {
-//			testResults_h[u] += testVector_h[v] * testMatrix_h[(activeSize * u) + v];
-//		}
-//	}
-//
-//	delete[] testVector_h;
-//	delete[] testMatrix_h;
-//
-//	updateVector<(activeSize > 1024u) ? 1024u : activeSize><<<activeSize, (activeSize > 1024u) ? 1024u : activeSize, ((activeSize > 1024u) ? 1024u : activeSize) * sizeof(float)>>>(testVector_d, testMatrix_d, testResults_d, activeSize, sizesM, activeSize);
-//	
-//	cudaMemcpy(testResults_dh, testResults_d, activeSize * sizeof(float), cudaMemcpyDeviceToHost);
-//	//cudaDeviceSynchronize();
-//	cudaFree(testVector_d);
-//	cudaFree(testMatrix_d);
-//	cudaFree(testResults_d);
-//	float score = 0.0f;
-//	for (uint32_t u = 0u; u < activeSize; u++) {
-//		float sum = testResults_h[u] - testResults_dh[u];
-//		score += sum * sum;
-//	}
-//
-//	delete[] testResults_h;
-//	delete[] testResults_dh;
-//	
-//	std::cout << "Matrix Kernel Test Results: " << score << '\n';
-//};
