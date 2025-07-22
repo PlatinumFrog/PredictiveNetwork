@@ -4,3 +4,6 @@ x64/
 PredictiveNetwork/SDL3.dll
 PredictiveNetwork/x64
 PredictiveNetwork/OLD
+
+PredictiveNetwork/words.txt
+PredictiveNetwork/ChatDataSet.txt
