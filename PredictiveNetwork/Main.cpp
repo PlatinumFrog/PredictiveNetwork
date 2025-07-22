@@ -3,17 +3,14 @@
 
 #include <SDL3/SDL.h>
 
-#include "NetworkCudaTexture.cuh"
+#include "Chat.h"
 
 constexpr float step = 1.0f/256.0f;
 
 constexpr float range = 1.0f;
 
-constexpr uint32_t viewWidth = 1280;
-constexpr uint32_t viewHeight = 720;
-
-constexpr uint32_t inputSize = 1u;
-constexpr uint32_t outputSize = 32u;
+constexpr uint32_t viewWidth = 2560;
+constexpr uint32_t viewHeight = 1440;
 
 void GLAPIENTRY MessageCallback(
 	GLenum source,
@@ -76,7 +73,7 @@ int main(int argc, char* argv[]) {
 	SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, SDL_GL_CONTEXT_DEBUG_FLAG);
 #endif // DEBUG
 
-	SDL_Window* window = SDL_CreateWindow("Camera", viewWidth, viewHeight, SDL_WINDOW_FULLSCREEN | SDL_WINDOW_OPENGL);
+	SDL_Window* window = SDL_CreateWindow("Chat", viewWidth, viewHeight, SDL_WINDOW_FULLSCREEN | SDL_WINDOW_OPENGL);
 	SDL_GLContext context = SDL_GL_CreateContext(window);
 	gladLoadGL();
 #if _DEBUG
@@ -92,20 +89,7 @@ int main(int argc, char* argv[]) {
 	glCullFace(GL_BACK);
 	glEnable(GL_MULTISAMPLE);
 
-	float input[inputSize];
-	uint32_t inputI[inputSize];
-	for (uint32_t i = 0u; i < inputSize; i++) {
-		input[i] = 0.0f, inputI[i] = i;
-	}
-	float output[outputSize];
-	uint32_t outputI[outputSize];
-	for (uint32_t i = 0u; i < outputSize; i++) {
-		output[i] = 0.0f, outputI[i] = (inputSize + i);
-	}
-
-	float trainingUpdateParam = 0.0f;
-
-	NetworkCudaTexture<64u> n1;
+	
 
 	const bool* keystates = SDL_GetKeyboardState(NULL);
 	bool loop = true;
@@ -132,23 +116,13 @@ int main(int argc, char* argv[]) {
 
 		events.clear();
 
-		for (uint32_t i = 0u; i < inputSize; i++) {
-			input[i] = std::sin(TAU*(trainingUpdateParam + (i * step)));
-		}
-		for (uint32_t i = 0u; i < outputSize; i++) {
-			float x = trainingUpdateParam + (i * step);
-			output[i] = sin(TAU * x) + 0.5 * sin(2.0f * TAU * x) + 0.333 * sin(3.0f * TAU * x) + 0.25 * sin(4.0f * TAU * x);
-		}
-		if (keystates[SDL_SCANCODE_UP] || std::isnan(n1.getEnergy())) n1.reset();
-		else if (keystates[SDL_SCANCODE_DOWN]) n1.sleep();
-		else if (keystates[SDL_SCANCODE_SPACE]) n1.run(input, inputI, inputSize);
-		else n1.train(input, output, inputI, outputI, inputSize, outputSize);
-		trainingUpdateParam += step;
-		if (trainingUpdateParam >= range) trainingUpdateParam -= range;
-		n1.print();
+
+
+		std::cout << "Bot: " << c.getOutput() << "\n";
+
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-		n1.draw();
+		c.draw();
 
 		SDL_GL_SwapWindow(window);
 
